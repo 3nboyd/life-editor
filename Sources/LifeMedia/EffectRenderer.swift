@@ -4,13 +4,13 @@ import LifeCore
 
 /// Original native looks; the same pure graph is used for thumbnails, playback and export.
 enum EffectRenderer {
-    static let noise = CIColorKernel(source: """
+    private static let noise = ImmutableColorKernel(CIColorKernel(source: """
         kernel vec4 seededGrain(__sample s, float amount, float seed) {
             vec2 p = destCoord();
             float n = fract(sin(dot(p, vec2(12.9898,78.233)) + seed) * 43758.5453) - 0.5;
             return vec4(clamp(s.rgb + vec3(n * amount * s.a), 0.0, s.a), s.a);
         }
-        """)
+        """))
     static func apply(_ effects: [EffectInstance], to original: CIImage, time: RationalTime = .zero) -> CIImage {
         effects.filter(\.isEnabled).reduce(original) { input, effect in
             let strength = max(0, min(1, effect.strength))
@@ -26,7 +26,7 @@ enum EffectRenderer {
             func grain(_ amount: Double) {
                 let frame = effect.stableID == "life.filter.VHS" ? floor(time.seconds * 30) : 0
                 let seed = Double(effect.seed % 1_000_003) + frame
-                image = noise?.apply(extent: image.extent, arguments: [image, amount, seed]) ?? image
+                image = noise.value?.apply(extent: image.extent, arguments: [image, amount, seed]) ?? image
             }
             if effect.stableID.hasPrefix("life.adjust.") {
                 let definition = NativeEffectRegistry.definition(for: effect.stableID)?.parameters.first { $0.name == "value" }
@@ -90,4 +90,12 @@ enum EffectRenderer {
             .transformed(by: CGAffineTransform(rotationAngle: v.rotationDegrees * .pi / 180))
             .transformed(by: CGAffineTransform(translationX: v.x * canvas.width, y: (1 - v.y) * canvas.height))
     }
+}
+
+/// A compiled Core Image kernel is immutable. Applying it creates independent
+/// image graphs; no mutable filter or render context is shared through this box.
+/// Older SDKs omit Sendable annotations for this immutable Objective-C API.
+private final class ImmutableColorKernel: @unchecked Sendable {
+    let value: CIColorKernel?
+    init(_ value: CIColorKernel?) { self.value = value }
 }
