@@ -125,7 +125,7 @@ enum TitleRenderer {
             }
         } else { CTFrameDraw(frame, context) }
         return context.makeImage().map(CIImage.init(cgImage:))
-    
+
     }
 }
 

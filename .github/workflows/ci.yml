@@ -1,11 +1,16 @@
 name: Source checks
 on: [push, pull_request]
+concurrency:
+  group: source-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   mac:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Use the selected Xcode toolchain
+        run: echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
       - run: swift --version
       - name: Native tests
         timeout-minutes: 10
