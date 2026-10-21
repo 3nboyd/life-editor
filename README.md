@@ -29,8 +29,10 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 - Move/trim/split/duplicate/delete/ripple-delete with source/overlap protection.
 - Multi-selection, linked/group moves, clipboard and editable vector drawings/shapes.
 - Fourteen source-handle-safe transitions with timeline duration handles.
-- Volume envelopes/fades, opacity, constant speed, pitch lock and exact undo.
-- Editable multiline titles, colors/backgrounds/outlines, viewer transform handles.
+- Direct volume/opacity points, shared fades, curves, constant speed and pitch lock.
+- Editable multiline titles, six entrances, colors/backgrounds/outlines and viewer handles.
+- Shared color wheel, RGB/HEX, swatches and viewer sampling.
+- Marker notes/ranges/colors and clip-source anchoring with trim/retime mapping.
 - Sixteen original visual looks, sixteen adjustments and real media thumbnails.
 - Crop, position, scale, rotation, flips and non-exported safe-area guides.
 - Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
@@ -38,6 +40,7 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 - Multicam groups, four proxy previews, waveform alignment candidates and manual offsets.
 - Continuous master audio, armed camera cuts, range pass replacement and audition.
 - SRT import/export and timed captions; portable collected packages and recovery.
+- Debounced autosave, recent projects, duplicate and confirmed revert.
 - H.264/HEVC/ProRes/WAV/AIFF/M4A export, ranges, progress and cancellation.
 
 Every export consumes a snapshot and the same compositor as preview. Rational

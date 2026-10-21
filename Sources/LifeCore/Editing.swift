@@ -88,6 +88,7 @@ public enum EditCommand: Sendable {
                     if let asset=next.assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, try clip.checkedSourceTime(at: clip.end) > asset.duration { throw DocumentError.sourceBoundary }
                     clip.volume=try prior.volume.window(from: startDelta, duration: clip.duration)
                     clip.opacity=try prior.opacity.window(from: startDelta, duration: clip.duration)
+                    if let animation=prior.title?.animation { clip.title?.animation=try animation.windowed(by:startDelta) }
                     next.sequence.tracks[t].clips[c]=clip
                     try checkPlacement(next.sequence.tracks[t], clipID: clip.id)
                 }
@@ -109,6 +110,7 @@ public enum EditCommand: Sendable {
                     right.id=UUID(); right.start=time; right.duration=try prior.end.checkedSubtracting(time); right.sourceStart=try prior.checkedSourceTime(at:time); right.linkID=rightLink
                     left.volume=try prior.volume.window(from:.zero,duration:left.duration); left.opacity=try prior.opacity.window(from:.zero,duration:left.duration)
                     right.volume=try prior.volume.window(from:left.duration,duration:right.duration); right.opacity=try prior.opacity.window(from:left.duration,duration:right.duration)
+                    if let animation=prior.title?.animation { right.title?.animation=try animation.windowed(by:left.duration) }
                     next.sequence.tracks[t].clips[index]=left
                     next.sequence.tracks[t].clips.insert(right,at:index+1)
                     // Range markers crossing the split remain attached to both source windows.
@@ -133,6 +135,7 @@ public enum EditCommand: Sendable {
                 clip.duration=try clip.duration.checkedScaled(by:oldRate,over:newRate)
                 clip.volume=try clip.volume.retimed(by:oldRate,over:newRate)
                 clip.opacity=try clip.opacity.retimed(by:oldRate,over:newRate)
+                if let animation=clip.title?.animation { clip.title?.animation=try animation.retimed(by:newRate,over:oldRate) }
                 // Store the exact rate represented by the document's micro-rational mapping.
                 clip.speed=Double(newRate)/1_000_000
                 clip.preservesPitch=preservesPitch
@@ -233,6 +236,7 @@ public enum EditCommand: Sendable {
                 let delta=try boundary.checkedSubtracting(right.start)
                 newRight.volume=try right.volume.window(from:delta,duration:newRight.duration)
                 newRight.opacity=try right.opacity.window(from:delta,duration:newRight.duration)
+                if let animation=right.title?.animation { newRight.title?.animation=try animation.windowed(by:delta) }
                 next.sequence.tracks[t].clips[l]=newLeft; next.sequence.tracks[t].clips[r]=newRight
             }
         case .renameTrack(let id, let name):

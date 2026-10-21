@@ -90,3 +90,65 @@ import LifeCore
     store.undo();#expect(store.document==before)
     store.redo();#expect(store.document==after)
 }
+
+@MainActor @Test func markerControlsMapSourceTimingAndUndoAnnotations() throws {
+    let store=EditorStore()
+    let asset=MediaAsset(url:URL(fileURLWithPath:"/tmp/life-marker.wav"),kind:.audio,duration:.init(value:20,timescale:1))
+    let clip=Clip(assetID:asset.id,start:.init(value:2,timescale:1),duration:.init(value:4,timescale:1),sourceStart:.init(value:3,timescale:1),speed:2)
+    var document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Music",kind:.audio,clips:[clip])]),assets:[asset])
+    let marker=Marker(time:.init(value:3,timescale:1),duration:.init(value:1,timescale:1),name:"Verse",note:"Keep the pickup")
+    document.sequence.markers=[marker]
+    store.replace(document);store.selection=clip.id
+    store.anchorMarker(marker.id,toSelected:true)
+    #expect(store.document.sequence.markers[0].clipID==clip.id)
+    #expect(store.document.sequence.markers[0].time == .init(value:5,timescale:1))
+    #expect(store.document.sequence.markers[0].duration == .init(value:2,timescale:1))
+    let anchored=store.document
+    store.setMarkerTiming(marker.id,start:3.5,duration:0.5)
+    #expect(MarkerResolver.sequenceRange(store.document.sequence.markers[0],in:store.document)?.start == .init(value:7,timescale:2))
+    store.undo();#expect(store.document==anchored)
+    store.anchorMarker(marker.id,toSelected:false)
+    #expect(store.document.sequence.markers[0].time==marker.time)
+    #expect(store.document.sequence.markers[0].note==marker.note)
+    #expect(try ProjectDocument.decode(JSONEncoder().encode(store.document))==store.document)
+}
+
+@MainActor @Test func debouncedAutosaveWritesLatestCommittedEditAndProtectsNewerFormats() async throws {
+    let root=FileManager.default.temporaryDirectory.appendingPathComponent("life-autosave-"+UUID().uuidString,isDirectory:true)
+    defer{try? FileManager.default.removeItem(at:root)}
+    let url=root.appendingPathComponent("Autosave.lifeedit",isDirectory:true)
+    let clip=Clip(duration:.init(value:2,timescale:1),title:.init(text:"First"))
+    let document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Title",kind:.title,clips:[clip])]))
+    try ProjectPackage.write(document,to:url)
+    let store=EditorStore();store.openProject(url);store.selection=clip.id
+    store.editSelected{$0.title?.text="Second"}
+    store.editSelected{$0.title?.text="Latest"}
+    try await Task.sleep(for:.milliseconds(2300))
+    #expect(try ProjectPackage.read(from:url)==store.document)
+    #expect(store.selectedClip?.title?.text=="Latest")
+    #expect(!store.dirty)
+    let data=try JSONEncoder().encode(store.document)
+    var json=try #require(JSONSerialization.jsonObject(with:data) as? [String:Any]);json["version"]=999
+    let newer=try JSONSerialization.data(withJSONObject:json,options:.sortedKeys)
+    let projectURL=url.appendingPathComponent(ProjectPackage.projectFilename)
+    try newer.write(to:projectURL,options:.atomic)
+    store.editSelected{$0.title?.text="Must not overwrite"}
+    try await Task.sleep(for:.milliseconds(2300))
+    #expect(try Data(contentsOf:projectURL)==newer)
+    #expect(store.dirty)
+    #expect(store.error?.contains("unsupported") == true)
+}
+
+@MainActor @Test func markerAnchoringRejectsUnrepresentableIntermediateWithoutCrashing() throws {
+    let store=EditorStore()
+    let asset=MediaAsset(url:URL(fileURLWithPath:"/tmp/life-marker-rational.wav"),kind:.audio,duration:.init(value:80022,timescale:1))
+    let clip=Clip(assetID:asset.id,duration:.init(value:20,timescale:1),sourceStart:.init(value:80000*999999937+1,timescale:999999937),speed:1.05)
+    let marker=Marker(time:.init(value:1,timescale:48000),name:"Sample")
+    let document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Music",kind:.audio,clips:[clip])],markers:[marker]),assets:[asset])
+    try document.validate()
+    store.replace(document);store.selection=clip.id
+    let before=store.document
+    store.anchorMarker(marker.id,toSelected:true)
+    #expect(store.document==before)
+    #expect(store.error != nil)
+}

@@ -31,6 +31,21 @@ struct TitleControls:View {
             Picker("Font",selection:Binding(get:{store.selectedClip?.title?.style?.fontName ?? "Helvetica-Bold"},set:{name in update{$0.fontName=name}})){
                 ForEach([("HelveticaNeue","Plain"),("Helvetica-Bold","Bold"),("HelveticaNeue-CondensedBold","Condensed"),("Georgia","Serif"),("Noteworthy","Handwritten"),("Menlo","Typewriter")],id:\.0){name,label in Text(label).tag(name)}
             }
+            if let name=store.selectedClip?.title?.style?.fontName,NSFont(name:name,size:12)==nil{Label("Missing font",systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)}
+            Picker("Animate",selection:Binding(get:{store.selectedClip?.title?.animation?.kind.rawValue ?? ""},set:{value in
+                store.editSelected{clip in if let kind=TitleAnimationKind(rawValue:value){var animation=clip.title?.animation ?? TitleAnimation(kind:kind);animation.kind=kind;clip.title?.animation=animation}else{clip.title?.animation=nil}}
+            })){
+                Text("None").tag("")
+                ForEach(TitleAnimationKind.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0.rawValue)}
+            }
+            if store.selectedClip?.title?.animation != nil{
+                HStack{Text("Duration");TextField("Seconds",value:Binding(get:{store.selectedClip?.title?.animation?.duration ?? 0.5},set:{value in guard value.isFinite,(0.05...10).contains(value) else{return};store.editSelected{$0.title?.animation?.duration=value}}),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).accessibilityLabel("Title entrance duration seconds")}
+                if store.selectedClip?.title?.animation?.kind == .slide{
+                    Picker("Direction",selection:Binding(get:{store.selectedClip?.title?.animation?.direction ?? 0},set:{value in store.editSelected{$0.title?.animation?.direction=value}})){
+                        Image(systemName:"arrow.left").tag(0);Image(systemName:"arrow.right").tag(1);Image(systemName:"arrow.up").tag(2);Image(systemName:"arrow.down").tag(3)
+                    }.pickerStyle(.segmented).accessibilityLabel("Title entrance direction")
+                }
+            }
             HStack{color("Text",\.color);color("Background",\.background)}
             HStack{Text("Round");Slider(value:Binding(get:{store.selectedClip?.title?.style?.cornerRadius ?? 0},set:{v in update{$0.cornerRadius=v}}),in:0...0.1).accessibilityLabel("Background corner radius")}
             HStack{Text("Outline");Slider(value:Binding(get:{store.selectedClip?.title?.style?.outlineWidth ?? 0},set:{v in update{$0.outlineWidth=v}}),in:0...10).accessibilityLabel("Text outline width")}
@@ -38,9 +53,6 @@ struct TitleControls:View {
     }
     private func update(_ change:(inout TitleStyle)->Void){store.editSelected{clip in var style=clip.title?.style ?? TitleStyle();change(&style);clip.title?.style=style}}
     private func color(_ label:String,_ key:WritableKeyPath<TitleStyle,RGBAColor>)->some View{
-        ColorPicker(label,selection:Binding(get:{let c=(store.selectedClip?.title?.style ?? .init())[keyPath:key];return Color(.sRGB,red:c.red,green:c.green,blue:c.blue,opacity:c.alpha)},set:{v in
-            guard let rgb=NSColor(v).usingColorSpace(.sRGB) else{return}
-            update{$0[keyPath:key] = .init(red:rgb.redComponent,green:rgb.greenComponent,blue:rgb.blueComponent,alpha:rgb.alphaComponent)}
-        }),supportsOpacity:true)
+        SharedColorPicker(label:label,color:Binding(get:{(store.selectedClip?.title?.style ?? .init())[keyPath:key]},set:{value in update{$0[keyPath:key]=value}}),store:store)
     }
 }

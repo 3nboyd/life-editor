@@ -39,7 +39,7 @@ import LifeCore
                          volume: .init(points: [.init(time: .zero, value: 1), .init(time: second, value: 0)]))
         let title = Clip(name: "Title", duration: second,
                          opacity: .init(points: [.init(time: .zero, value: 0), .init(time: second, value: 1)]),
-                         title: .init(text: "Life", fontSize: 14))
+                         title: .init(text: "Life", fontSize: 14, animation: .init(kind: .fade, duration: 0.8)))
         let document = ProjectDocument(sequence: .init(settings: .init(width: 64, height: 64), tracks: [
             .init(name: "Red", kind: .video, clips: [bottom]),
             .init(name: "Blue", kind: .video, clips: [top]),
@@ -67,6 +67,8 @@ import LifeCore
         let frameTime = CMTime(value: 15, timescale: 30)
         let previewFrame = try await preview.image(at: frameTime).image
         trace("shared-compositor preview complete")
+        let titlePixels = imageBytes(previewFrame)
+        #expect(stride(from: 0, to: titlePixels.count, by: 4).contains { titlePixels[$0 + 1] > 25 })
         let destination = directory.appendingPathComponent("result.mp4")
         try await pipeline.export(snapshot, to: destination)
         trace("export complete")

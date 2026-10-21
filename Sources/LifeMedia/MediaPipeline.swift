@@ -277,7 +277,7 @@ extension RationalTime {
                 end = CMTimeMaximum(end, clipEnd)
                 if let title = clip.title, !track.isHidden {
                     layers.append(RenderLayer(trackID: nil, clip: clip, transform: .identity,
-                                              titleImage: Self.titleImage(title, size: size), renderStart: renderStart, renderEnd: renderEnd))
+                                              titleImage: TitleRenderer.image(title, size: size), renderStart: renderStart, renderEnd: renderEnd))
                     continue
                 }
                 if let graphic = clip.graphic, !track.isHidden {
@@ -367,7 +367,7 @@ extension RationalTime {
             try target.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 1, timescale: 1)), of: source, at: .zero)
             target.scaleTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 1, timescale: 1)), toDuration: end)
             layers.insert(RenderLayer(trackID: target.trackID,
-                clip: Clip(duration: .init(value: end.value, timescale: Int64(end.timescale))),
+                clip: Clip(duration: .init(value: end.value, timescale: Int64(end.timescale)), opacity: .init(baseValue: 0)),
                 transform: .identity, titleImage: nil), at: 0)
         }
         if composition.duration < end { composition.insertEmptyTimeRange(CMTimeRange(start: composition.duration, duration: CMTimeSubtract(end, composition.duration))) }
@@ -441,42 +441,5 @@ extension RationalTime {
         }
     }
 
-    private static func titleImage(_ title: TitleContent, size: CGSize) -> CIImage? {
-        // Core Text renders to a stable bitmap shared by preview and export.
-        guard let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let style = title.style ?? TitleStyle()
-        func color(_ value: RGBAColor) -> CGColor { CGColor(red: value.red, green: value.green, blue: value.blue, alpha: value.alpha) }
-        let font = CTFontCreateWithName((style.fontName ?? "Helvetica-Bold") as CFString, title.fontSize, nil)
-        var alignment = CTTextAlignment.center
-        let paragraph = withUnsafePointer(to: &alignment) {
-            var setting = CTParagraphStyleSetting(spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: $0)
-            return CTParagraphStyleCreate(&setting, 1)
-        }
-        var attributes: [NSAttributedString.Key: Any] = [
-            NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color(style.color),
-            NSAttributedString.Key(kCTParagraphStyleAttributeName as String): paragraph
-        ]
-        if style.outlineWidth > 0 {
-            attributes[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -style.outlineWidth * 100 / title.fontSize
-            attributes[NSAttributedString.Key(kCTStrokeColorAttributeName as String)] = color(style.outlineColor)
-        }
-        let text = NSAttributedString(string: title.text, attributes: attributes)
-        let setter = CTFramesetterCreateWithAttributedString(text)
-        let measured = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(location: 0, length: 0), nil,
-            CGSize(width: size.width * 0.9, height: size.height * 0.9), nil)
-        let padding = max(2, title.fontSize * 0.25)
-        let bounds = CGRect(x: style.x * size.width - measured.width / 2 - padding,
-                            y: (1 - style.y) * size.height - measured.height / 2 - padding,
-                            width: ceil(measured.width) + padding * 2, height: ceil(measured.height) + padding * 2)
-        context.setFillColor(color(style.background))
-        context.addPath(CGPath(roundedRect: bounds, cornerWidth: min(bounds.height, bounds.width) * style.cornerRadius,
-                               cornerHeight: min(bounds.height, bounds.width) * style.cornerRadius, transform: nil))
-        context.fillPath()
-        let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), CGPath(rect: bounds.insetBy(dx: padding, dy: padding), transform: nil), nil)
-        CTFrameDraw(frame, context)
-        return context.makeImage().map(CIImage.init(cgImage:))
-    }
+
 }

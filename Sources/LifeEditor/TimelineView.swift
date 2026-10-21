@@ -23,6 +23,9 @@ struct TimelineSurface: NSViewRepresentable {
     var store: EditorStore
     let header:Double=140, lane:Double=76, ruler:Double=32
     var drag: Drag?
+    private enum AutomationDragMode { case point(UUID),base,fadeIn,fadeOut }
+    private struct AutomationDrag { var clipID:UUID;var lane:AutomationLane;var mode:AutomationDragMode;var origin:NSPoint;var envelope:AutomationEnvelope }
+    private var automationDrag:AutomationDrag?
     var ghost: NSRect?
     var snapX: Double?
     var snapLabel: String?
@@ -119,7 +122,7 @@ struct TimelineSurface: NSViewRepresentable {
         let visible=visibleRect
         let lower=max(0,(visible.minX-header)/pps), upper=max(lower,(visible.maxX-header)/pps)
         if store.gridVisible {
-            if let grid=store.document.sequence.musicalGrid {
+            if store.gridMode == .beats,let grid=store.document.sequence.musicalGrid {
                 var displayed=grid
                 let beatPixels=60/grid.bpm*4/Double(grid.beatUnit ?? 4)*pps
                 if beatPixels/Double(grid.subdivision)<5 { displayed.subdivision=1 }
@@ -142,12 +145,13 @@ struct TimelineSurface: NSViewRepresentable {
                     }
                 }
             } else {
-                let step=timeGridStep
+                let step=store.gridMode == .frames ? frameGridStep:timeGridStep
                 let first=max(0,Int((lower/step).rounded(.down))), last=max(0,Int((upper/step).rounded(.up)))
                 if last >= first && last-first<2000 { for i in first...last {
                     let xx=x(Double(i)*step);NSColor(white:0.22,alpha:1).setStroke()
                     let path=NSBezierPath();path.move(to:NSPoint(x:xx,y:0));path.line(to:NSPoint(x:xx,y:bounds.height));path.lineWidth=0.5;path.stroke()
-                    text(String(format:step<1 ? "%.2fs":"%.0fs",Double(i)*step),NSPoint(x:xx+5,y:9),size:10)
+                    let label=store.gridMode == .frames ? "\(Int64((Double(i)*step/store.document.sequence.settings.frameRate.frameDuration.seconds).rounded()))f":String(format:step<1 ? "%.2fs":"%.0fs",Double(i)*step)
+                    text(label,NSPoint(x:xx+5,y:9),size:10)
                 } }
             }
         }
@@ -176,16 +180,30 @@ struct TimelineSurface: NSViewRepresentable {
                     NSColor.white.withAlphaComponent(0.22).setStroke();waveform.stroke()
                 }
 
-                let envelope=(track.kind == .video || track.kind == .audio) ? clip.volume:clip.opacity
+                let automationLane=displayedAutomationLane(for:clip,track:track)
+                let envelope=automationLane == .volume ? clip.volume:clip.opacity
                 let path=NSBezierPath()
                 for pixel in stride(from:startPixel,through:endPixel,by:2) {
                     let local=RationalTime(value:Int64((pixel/pps*48000).rounded()),timescale:48000)
-                    let y=box.maxY-8-min(2,max(0,envelope.value(at:local)))/2*28
-                    if pixel==startPixel { path.move(to:NSPoint(x:box.minX,y:y)) } else { path.line(to:NSPoint(x:box.minX+pixel,y:y)) }
+                    let y=automationY(envelope.value(at:local),box:box,lane:automationLane)
+                    if pixel==startPixel { path.move(to:NSPoint(x:box.minX+pixel,y:y)) } else { path.line(to:NSPoint(x:box.minX+pixel,y:y)) }
                 }
                 NSColor.white.withAlphaComponent(0.65).setStroke();path.lineWidth=1;path.stroke()
-                if selected {
-                    for xx in [box.minX+8,box.maxX-8] { NSColor.white.setFill();NSBezierPath(ovalIn:NSRect(x:xx-4,y:box.maxY-17,width:8,height:8)).fill() }
+                if store.selection == clip.id {
+                    for point in envelope.points where point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
+                        let center=automationPointPosition(point,envelope:envelope,clip:clip,box:box,lane:automationLane)
+                        let selected=store.selectedAutomationPoint == point.id
+                        NSColor(white:selected ? 1:0.7,alpha:1).setFill()
+                        let marker=NSBezierPath();marker.move(to:NSPoint(x:center.x,y:center.y-4));marker.line(to:NSPoint(x:center.x+4,y:center.y));marker.line(to:NSPoint(x:center.x,y:center.y+4));marker.line(to:NSPoint(x:center.x-4,y:center.y));marker.close();marker.fill()
+                        if selected { NSColor.black.setStroke();marker.lineWidth=1;marker.stroke() }
+                    }
+                    for (xx,incoming) in [(box.minX+8,true),(box.maxX-8,false)] {
+                        let y=box.minY+24;let handle=NSBezierPath();handle.move(to:NSPoint(x:xx+(incoming ? -3:3),y:y-4));handle.line(to:NSPoint(x:xx+(incoming ? -3:3),y:y+4));handle.line(to:NSPoint(x:xx+(incoming ? 4:-4),y:y));handle.close();NSColor.white.setFill();handle.fill()
+                    }
+                    if automationDrag?.clipID == clip.id {
+                        let value=store.currentAutomationPoint.map { $0.value*envelope.baseValue } ?? envelope.baseValue
+                        text(AutomationScale.label(value,lane:automationLane),NSPoint(x:max(box.minX+8,visibleRect.minX+header+6),y:box.minY+20),color:.white,size:10)
+                    }
                 }
                 NSGraphicsContext.restoreGraphicsState()
             }
@@ -204,13 +222,14 @@ struct TimelineSurface: NSViewRepresentable {
         for marker in store.document.sequence.markers {
             guard let range=MarkerResolver.sequenceRange(marker,in:store.document) else { continue }
             let xx=x(range.start.seconds), end=x(range.end.seconds)
+            let markerColor=marker.color.map { NSColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:$0.alpha) } ?? NSColor.systemOrange
             if range.duration > .zero {
-                NSColor.systemOrange.withAlphaComponent(0.14).setFill();NSRect(x:xx,y:22,width:max(1,end-xx),height:bounds.height-22).fill()
-                NSColor.systemOrange.withAlphaComponent(0.6).setFill();NSRect(x:end,y:22,width:1,height:bounds.height-22).fill()
+                markerColor.withAlphaComponent(markerColor.alphaComponent*0.14).setFill();NSRect(x:xx,y:22,width:max(1,end-xx),height:bounds.height-22).fill()
+                markerColor.withAlphaComponent(markerColor.alphaComponent*0.6).setFill();NSRect(x:end,y:22,width:1,height:bounds.height-22).fill()
             }
-            NSColor.systemOrange.setFill();NSRect(x:xx,y:22,width:2,height:bounds.height-22).fill()
-            text("◆",NSPoint(x:xx-5,y:4),color:.systemOrange)
-            if !marker.name.isEmpty { text(marker.name,NSPoint(x:xx+7,y:4),color:.systemOrange,size:10) }
+            markerColor.setFill();NSRect(x:xx,y:22,width:2,height:bounds.height-22).fill()
+            text("◆",NSPoint(x:xx-5,y:4),color:markerColor)
+            if !marker.name.isEmpty { text(marker.name,NSPoint(x:xx+7,y:4),color:markerColor,size:10) }
         }
         NSGraphicsContext.restoreGraphicsState()
         for transition in store.document.sequence.transitions ?? [] {
@@ -255,14 +274,56 @@ struct TimelineSurface: NSViewRepresentable {
         guard let clip=track.clips.first(where:{rect($0,row:row).contains(point)}) else { store.selection=nil;store.seek((point.x-header)/store.pixelsPerSecond);return }
         if event.modifierFlags.contains(.shift){store.toggleSelection(clip.id)}else if !store.selectedIDs.contains(clip.id){store.selectedIDs=[clip.id];store.selection=clip.id}else{store.selection=clip.id}
         if event.clickCount==2 { store.panel=clip.title == nil ? .clip : .title;return }
+        let box=rect(clip,row:row),automationLane=displayedAutomationLane(for:clip,track:track)
+        let envelope=automationLane == .volume ? clip.volume:clip.opacity
+        let keyframes=envelope.points.filter { $0.time>=envelope.evaluationOffset && $0.time<=envelope.evaluationOffset+clip.duration }
+        if let keyframe=keyframes.first(where: { keyframe in
+            let center=automationPointPosition(keyframe,envelope:envelope,clip:clip,box:box,lane:automationLane)
+            return hypot(center.x-point.x,center.y-point.y)<=7
+        }) {
+            store.selectedAutomationPoint=keyframe.id
+            if !track.isLocked { automationDrag=AutomationDrag(clipID:clip.id,lane:automationLane,mode:.point(keyframe.id),origin:point,envelope:envelope);store.beginGesture() }
+            needsDisplay=true;return
+        }
+        let local=min(clip.duration.seconds,max(0,(point.x-header)/store.pixelsPerSecond-clip.start.seconds))
+        let lineY=automationY(envelope.value(at:store.time(local,audio:true)),box:box,lane:automationLane)
+        if event.modifierFlags.contains(.command),abs(point.y-lineY)<=9 {
+            var sequenceTime=clip.start.seconds+local
+            if store.snapping && !event.modifierFlags.contains(.option),let snap=snappedTime(sequenceTime) { sequenceTime=snap.time }
+            store.addAutomationPoint(at:sequenceTime,effectiveValue:automationValue(point.y,box:box,lane:automationLane));needsDisplay=true;return
+        }
         guard !track.isLocked else{return}
-        let box=rect(clip,row:row)
-        let fade=point.y>box.maxY-24
-        let mode:Mode = point.x<box.minX+12 ? (fade ? .fadeIn:.left) : point.x>box.maxX-12 ? (fade ? .fadeOut:.right) : .move
+        let fadeIn=abs(point.x-(box.minX+8))<=8 && abs(point.y-(box.minY+24))<=7
+        let fadeOut=abs(point.x-(box.maxX-8))<=8 && abs(point.y-(box.minY+24))<=7
+        if fadeIn || fadeOut || (abs(point.y-lineY)<=5 && point.x>box.minX+12 && point.x<box.maxX-12) {
+            store.selectedAutomationPoint=nil
+            automationDrag=AutomationDrag(clipID:clip.id,lane:automationLane,mode:fadeIn ? .fadeIn:(fadeOut ? .fadeOut:.base),origin:point,envelope:envelope);store.beginGesture();needsDisplay=true;return
+        }
+        store.selectedAutomationPoint=nil
+        let mode:Mode = point.x<box.minX+12 ? .left : point.x>box.maxX-12 ? .right : .move
         drag=Drag(clip:clip,track:track,origin:point,mode:mode,target:mode == .right ? clip.end.seconds : clip.start.seconds)
         needsDisplay=true
     }
     override func mouseDragged(with event:NSEvent) {
+        if let gesture=automationDrag,let clip=store.selectedClip,clip.id == gesture.clipID,let row=tracks.firstIndex(where: { $0.clips.contains { $0.id == clip.id } }) {
+            let point=convert(event.locationInWindow,from:nil),box=rect(clip,row:row)
+            snapX=nil;snapLabel=nil
+            var sequenceTime=min(clip.end.seconds,max(clip.start.seconds,(point.x-header)/store.pixelsPerSecond))
+            let excludedPoint:UUID?
+            if case .point(let id)=gesture.mode { excludedPoint=id } else { excludedPoint=nil }
+            if store.snapping && !event.modifierFlags.contains(.option),let snap=snappedTime(sequenceTime,excludingPoint:excludedPoint) {
+                sequenceTime=min(clip.end.seconds,max(clip.start.seconds,snap.time));snapX=x(sequenceTime);snapLabel=snap.label
+            }
+            switch gesture.mode {
+            case .point(let id):store.updateAutomationPoint(id:id,sequenceTime:sequenceTime,effectiveValue:automationValue(point.y,box:box,lane:gesture.lane))
+            case .base:
+                let value=gesture.lane == .volume ? (gesture.envelope.baseValue == 0 ? AutomationScale.value((gesture.origin.y-point.y)/40,lane:.volume):gesture.envelope.baseValue*pow(10,(gesture.origin.y-point.y)*0.75/20)):gesture.envelope.baseValue+(gesture.origin.y-point.y)/30
+                store.setAutomationBase(max(0,min(gesture.lane.maximumValue,value)));snapX=nil;snapLabel=nil
+            case .fadeIn:store.setLaneFade(sequenceTime-clip.start.seconds,incoming:true,source:gesture.envelope)
+            case .fadeOut:store.setLaneFade(clip.end.seconds-sequenceTime,incoming:false,source:gesture.envelope)
+            }
+            needsDisplay=true;return
+        }
         if let resize=transitionResize {
             let point=convert(event.locationInWindow,from:nil)
             let minimum=store.document.sequence.settings.frameRate.frameDuration.seconds
@@ -285,6 +346,7 @@ struct TimelineSurface: NSViewRepresentable {
         needsDisplay=true
     }
     override func mouseUp(with event:NSEvent) {
+        if automationDrag != nil { automationDrag=nil;snapX=nil;snapLabel=nil;store.endGesture();needsDisplay=true;return }
         if transitionResize != nil {transitionResize=nil;store.endGesture();return}
         defer{drag=nil;ghost=nil;snapX=nil;snapLabel=nil;needsDisplay=true}
         guard let drag else{return}
@@ -293,42 +355,45 @@ struct TimelineSurface: NSViewRepresentable {
         case .move:if abs(drag.target-drag.clip.start.seconds)>0.000001 {store.apply(.moveMany(clipIDs:store.selectedIDs,delta:store.time(drag.target,audio:audio)-drag.clip.start))}
         case .left:if abs(drag.target-drag.clip.start.seconds)>0.000001 {store.apply(.trim(clipID:drag.clip.id,start:store.time(drag.target,audio:audio),end:drag.clip.end))}
         case .right:if abs(drag.target-drag.clip.end.seconds)>0.000001 {store.apply(.trim(clipID:drag.clip.id,start:drag.clip.start,end:store.time(drag.target,audio:audio)))}
-        case .fadeIn,.fadeOut:
-            let point=convert(event.locationInWindow,from:nil)
-            let local=min(drag.clip.duration.seconds,max(0,(point.x-header)/store.pixelsPerSecond-drag.clip.start.seconds))
-            store.editSelected { clip in
-                let level=1.0
-                var envelope=(drag.track.kind == .video || drag.track.kind == .audio) ? clip.volume:clip.opacity
-                let offset=envelope.evaluationOffset
-                // Both handles edit the same envelope used by every volume control.
-                if drag.mode == .fadeIn {
-                    let t=store.time(local,audio:true)
-                    envelope.points.removeAll{$0.time<=t+offset}
-                    envelope.points += [.init(time:offset,value:0),.init(time:t+offset,value:level)]
-                } else {
-                    let t=store.time(local,audio:true)
-                    envelope.points.removeAll{$0.time>=t+offset}
-                    envelope.points += [.init(time:t+offset,value:level),.init(time:clip.duration+offset,value:0)]
-                }
-                if drag.track.kind == .video || drag.track.kind == .audio{clip.volume=envelope}else{clip.opacity=envelope}
-            }
+        case .fadeIn,.fadeOut:break // Fade handles use the shared automation gesture above.
         }
+    }
+    private func displayedAutomationLane(for clip:Clip,track:Track)->AutomationLane {
+        if store.selection == clip.id { return store.automationLane }
+        return (track.kind == .audio || track.kind == .video) ? .volume:.opacity
+    }
+    private func automationY(_ value:Double,box:NSRect,lane:AutomationLane)->Double { box.maxY-8-AutomationScale.position(value,lane:lane)*28 }
+    private func automationValue(_ y:Double,box:NSRect,lane:AutomationLane)->Double { AutomationScale.value((box.maxY-8-y)/28,lane:lane) }
+    private func automationPointPosition(_ point:AutomationPoint,envelope:AutomationEnvelope,clip:Clip,box:NSRect,lane:AutomationLane)->NSPoint {
+        NSPoint(x:x(clip.start.seconds+(point.time-envelope.evaluationOffset).seconds),y:automationY(point.value*envelope.baseValue,box:box,lane:lane))
+    }
+    private var frameGridStep:Double {
+        let frame=store.document.sequence.settings.frameRate.frameDuration.seconds
+        return frame*max(1,ceil(80/store.pixelsPerSecond/frame))
     }
     private var timeGridStep: Double { [0.01,0.05,0.1,0.25,0.5,1,2,5,10,30,60,120,300].first { $0>=80/store.pixelsPerSecond } ?? 600 }
     /// Explicit edits take priority over a closer ordinary grid division, within eight screen pixels.
-    func snappedTime(_ target: Double, excluding: Set<UUID> = []) -> (time:Double,label:String)? {
+    func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil) -> (time:Double,label:String)? {
         var explicit:[(time:Double,label:String)]=store.document.sequence.tracks.flatMap(\.clips).filter { !excluding.contains($0.id) }.flatMap { [($0.start.seconds,"Clip"),($0.end.seconds,"Clip")] }
         for marker in store.document.sequence.markers {
             guard let range=MarkerResolver.sequenceRange(marker,in:store.document) else { continue }
             let label=marker.name.isEmpty ? "Marker":marker.name
             explicit.append((range.start.seconds,label));if range.duration > .zero { explicit.append((range.end.seconds,label)) }
         }
+        for clip in store.document.sequence.tracks.flatMap(\.clips) where !excluding.contains(clip.id) {
+            for envelope in [clip.volume,clip.opacity] {
+                for point in envelope.points where point.id != excludingPoint && point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
+                    explicit.append((clip.start.seconds+(point.time-envelope.evaluationOffset).seconds,"Point"))
+                }
+            }
+        }
         explicit.append((store.playhead,"Playhead"))
         let candidates=explicit.filter { $0.time >= 0 && abs($0.time-target)*store.pixelsPerSecond<=8 }
         if let nearest=candidates.min(by:{abs($0.time-target)<abs($1.time-target)}) { return nearest }
         let gridTarget:Double
         let label:String
-        if let grid=store.document.sequence.musicalGrid,let nearest=grid.nearestDivision(to:store.time(max(0,target),audio:true)) { gridTarget=nearest.time.seconds;label=nearest.isBar ? "Bar":"Beat" }
+        if store.gridMode == .beats,let grid=store.document.sequence.musicalGrid,let nearest=grid.nearestDivision(to:store.time(max(0,target),audio:true)) { gridTarget=nearest.time.seconds;label=nearest.isBar ? "Bar":"Beat" }
+        else if store.gridMode == .frames { gridTarget=store.document.sequence.settings.frameRate.quantized(store.time(target,audio:true)).seconds;label="Frame" }
         else { gridTarget=(target/timeGridStep).rounded()*timeGridStep;label="Grid" }
         return gridTarget >= 0 && abs(gridTarget-target)*store.pixelsPerSecond<=8 ? (gridTarget,label):nil
     }
@@ -365,6 +430,7 @@ struct TimelineSurface: NSViewRepresentable {
     }
     override func keyDown(with event:NSEvent) {
         if !event.isARepeat,store.panel == .multicam,let chars=event.charactersIgnoringModifiers,let digit=Int(chars),(1...9).contains(digit),store.visibleAngles.indices.contains(digit-1) {store.chooseAngle(store.visibleAngles[digit-1].id);return}
+        if event.keyCode==51,store.currentAutomationPoint != nil {store.deleteAutomationPoint();return}
         if event.keyCode==123 {store.step(-1)} else if event.keyCode==124 {store.step(1)} else if event.keyCode==49 {store.togglePlayback()} else if event.keyCode==51 {store.deleteSelection()} else {super.keyDown(with:event)}
     }
 }

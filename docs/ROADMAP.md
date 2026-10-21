@@ -6,13 +6,15 @@ export and relevant verification. This register retains the owner's full scope.
 
 ## Phase 0 — foundation gate
 
-- [ ] Native Swift 6/macOS 15/Apple Silicon app, modular document/commands/timeline/media/renderer/audio/analysis/export boundaries.
-- [ ] Real import → layered edit → save/reopen → export vertical slice.
-- [ ] Two composited video layers, animated title, volume fade, pitch-preserving retiming, matching export.
-- [ ] Sample-level audio placement; four synchronized proxy previews.
-- [ ] Codec fixtures, frame/audio comparisons, baseline performance measurements.
+- [x] Native Swift 6/macOS 15/Apple Silicon app, modular document/commands/timeline/media/renderer/audio/analysis/export boundaries.
+- [x] Real import → layered edit → save/reopen → export vertical slice.
+- [x] Two composited video layers, animated title, volume fade, pitch-preserving retiming, matching export.
+- [x] Sample-level audio placement; four synchronized proxy previews.
+- [x] Codec fixtures, frame/audio comparisons, baseline performance measurements.
 
-Gate remains open until all above work together with real media.
+Technical gate verified with the combined native media workflow and M4 baseline.
+This does not establish M1 targets or musician/student usability; those remain
+explicit release-quality gates.
 
 ## Phase 1 — everyday editing
 

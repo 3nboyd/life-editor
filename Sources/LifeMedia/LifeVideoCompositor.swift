@@ -81,6 +81,7 @@ final class LifeVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendab
                 .transformed(by: CGAffineTransform(translationX: (canvas.width - extent.width * scale) / 2,
                                                    y: (canvas.height - extent.height * scale) / 2))
         } else { return nil }
+        if let title = layer.clip.title { foreground = TitleRenderer.animated(foreground, title: title, localTime: time - layer.clip.start, canvas: canvas) }
         let localTime = max(.zero, min(layer.clip.duration, time - layer.clip.start))
         foreground = EffectRenderer.apply(layer.clip.effects ?? [], to: foreground, time: time - layer.clip.start)
         foreground = EffectRenderer.transform(foreground, visual: layer.clip.visual, canvas: canvas)

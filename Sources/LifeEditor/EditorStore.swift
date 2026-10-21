@@ -5,12 +5,16 @@ import LifeCore
 import LifeMedia
 import LifeAnalysis
 
+enum TimelineGridMode:String {case time,frames,beats}
+
 @MainActor
 final class EditorStore: ObservableObject {
     @Published var document = ProjectDocument()
-    @Published var selectedTransition:UUID?
+    @Published var selectedTransition:UUID?{didSet{if oldValue != selectedTransition{cancelColorSampling()}}}
     @Published var selectedIDs:Set<UUID>=[]
-    @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]}}}
+    @Published var selectedAutomationPoint:UUID?
+    @Published var automationLane:AutomationLane = .volume
+    @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]};if oldValue != selection{cancelColorSampling();selectedAutomationPoint=nil;automationLane=selectedUsesOpacity ? .opacity:.volume}}}
     @Published var playhead: Double = 0
     @Published var playing = false
     @Published var busy = false
@@ -36,11 +40,15 @@ final class EditorStore: ObservableObject {
     @Published var panel: InspectorPanel? = nil
     @Published var snapping = true
     @Published var pixelsPerSecond: Double = 60
+    @Published var samplingColor=false
+    private var colorSampleAction:((RGBAColor)->Void)?
+    private var videoOutput:AVPlayerItemVideoOutput?
     @Published var safeAreas = false
     @Published var focused = false
     @Published var dirty = false
     @Published var analyzing = false
     @Published var analysisConfidence: Double?
+    @Published var gridMode:TimelineGridMode = .time
     @Published var gridVisible = true
     @Published var switchArmed = false
     @Published var syncCandidates:[CameraSyncCandidate]=[]
@@ -75,7 +83,7 @@ final class EditorStore: ObservableObject {
     private var observer: Any?
     private var generation = 0
     private var projectGeneration = 0
-    enum InspectorPanel: String, CaseIterable { case media, title, clip, audio, multicam, effects, drawing }
+    enum InspectorPanel: String, CaseIterable { case media, title, clip, audio, multicam, effects, drawing, markers }
     init() {
         player.automaticallyWaitsToMinimizeStalling=false
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
@@ -106,7 +114,7 @@ final class EditorStore: ObservableObject {
     func redo() { editor.redo(); changed() }
     func rebuild(preview:ProjectDocument? = nil) {
         syncPreviewing=preview != nil;previewDocument=preview
-        if (preview ?? document).sequence.duration == .zero { refreshTask?.cancel(); player.replaceCurrentItem(with:nil); return }
+        if (preview ?? document).sequence.duration == .zero { refreshTask?.cancel();videoOutput=nil;cancelColorSampling(); player.replaceCurrentItem(with:nil); return }
         generation += 1; let token = generation
         refreshTask?.cancel()
         let snapshot = ProjectSnapshot(document:preview ?? document)
@@ -118,11 +126,22 @@ final class EditorStore: ObservableObject {
                 guard !Task.isCancelled, token == generation else { return }
                 previewUsesProxies=prepared.usesProxies
                 let position = playhead
+                let output=AVPlayerItemVideoOutput(pixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA]);prepared.playerItem.add(output);videoOutput=output
                 player.replaceCurrentItem(with: prepared.playerItem)
                 seek(position)
                 if playing { player.play() }
             } catch { if !Task.isCancelled { self.error = Self.message(error) } }
         }
+    }
+    func beginColorSampling(_ apply:@escaping(RGBAColor)->Void){
+        guard videoOutput != nil else{error="Load a visual frame before sampling a color.";return}
+        stopPlayback();colorSampleAction=apply;samplingColor=true
+    }
+    func cancelColorSampling(){samplingColor=false;colorSampleAction=nil}
+    func sampleViewerColor(x:Double,y:Double){
+        guard samplingColor else{return}
+        guard let buffer=videoOutput?.copyPixelBuffer(forItemTime:player.currentTime(),itemTimeForDisplay:nil),let color=ViewerColorSampler.sample(buffer,x:x,y:y) else{error="Seek to a visible frame and sample again.";cancelColorSampling();return}
+        let action=colorSampleAction;cancelColorSampling();action?(color)
     }
     func seek(_ seconds: Double) {
         let position = min(max(0, seconds), max(0, playbackDocument.sequence.duration.seconds))
@@ -397,6 +416,7 @@ final class EditorStore: ObservableObject {
         replace(next)
     }
     private func resetSession(){
+        cancelColorSampling();videoOutput=nil
         cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
     }
     func newProject() {
@@ -500,8 +520,12 @@ final class EditorStore: ObservableObject {
                     try? FileManager.default.removeItem(at:requestURL)
                     offset+=chunk
                 }
-                guard projectID==document.id else{return}
-                var next=document;next.sequence.tracks.append(Track(name:"Captions",kind:.caption,clips:mapped));replace(next)
+                guard projectID==document.id,document.sequence.tracks.flatMap(\.clips).first(where:{$0.id==clip.id})==clip else{error="The source clip changed. Transcribe it again with the new timing.";return}
+                var lanes:[[Clip]]=[]
+                for caption in mapped.sorted(by:{$0.start<$1.start}){
+                    if let lane=lanes.firstIndex(where:{($0.last?.end ?? .zero)<=caption.start}){lanes[lane].append(caption)}else{lanes.append([caption])}
+                }
+                var next=document;next.sequence.tracks += lanes.map{Track(name:"Captions",kind:.caption,clips:$0)};replace(next)
             }catch{if !Task.isCancelled{self.error=Self.message(error)}}
         }
     }
@@ -540,6 +564,7 @@ final class EditorStore: ObservableObject {
     }
     func cancelExport() { exportTask?.cancel() }
     func setGrid(_ update:(inout MusicalGrid)->Void) {
+        gridMode = .beats
         var next=document
         var grid=next.sequence.musicalGrid ?? MusicalGrid()
         update(&grid);next.sequence.musicalGrid=grid;replace(next)
@@ -734,9 +759,16 @@ final class EditorStore: ObservableObject {
     private var recoveryTask:Task<Void,Never>?
     private func scheduleRecovery(){
         recoveryTask?.cancel()
-        let snapshot=document
+        let snapshot=document,destination=projectURL
         recoveryTask=Task{
-            do{try await Task.sleep(for:.seconds(2));try Task.checkCancellation();try await Task.detached(priority:.utility){try RecoveryStore().checkpoint(snapshot)}.value}catch{if !Task.isCancelled{self.error="Recovery checkpoint failed: "+Self.message(error)}}
+            do{
+                try await Task.sleep(for:.seconds(2));try Task.checkCancellation()
+                // Main-actor serialization keeps autosave ordered with explicit Save.
+                if let destination,destination==projectURL,snapshot==document{
+                    try ProjectPackage.write(snapshot,to:destination);dirty=false
+                }
+                try await RecoveryWriter.shared.checkpoint(snapshot)
+            }catch{if !Task.isCancelled{self.error="Autosave or recovery failed: "+Self.message(error)}}
         }
     }
     static func message(_ error: Error) -> String {

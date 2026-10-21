@@ -16,6 +16,7 @@ struct WorkspaceView: View {
     @State private var resizingPanel:Double?
     @State private var timelineCollapsed=false
     @State private var shapePicker=false
+    @State private var audioPage=0
     var body: some View {
         VStack(spacing:0) {
             toolbar
@@ -62,6 +63,7 @@ struct WorkspaceView: View {
             icon("pencil.tip", "Drawing", selected:store.panel == .drawing){toggle(.drawing);store.drawingMode=store.panel == .drawing ? 1:0}
             icon("slider.horizontal.3", "Clip", selected:store.panel == .clip) { toggle(.clip) }
             icon("camera.filters", "Effects", selected:store.panel == .effects){toggle(.effects)}
+            icon("bookmark", "Markers",selected:store.panel == .markers){toggle(.markers)}
             icon("waveform", "Audio", selected:store.panel == .audio) {toggle(.audio)}
             icon("square.grid.2x2", "Multicam", selected:store.panel == .multicam) {toggle(.multicam)}
             Spacer()
@@ -121,7 +123,8 @@ struct WorkspaceView: View {
                 Button {store.snapping.toggle()} label: {MagnetIcon().stroke(lineWidth:1.8).frame(width:15,height:17).padding(8).background(store.snapping ? accent.opacity(0.2):.clear,in:RoundedRectangle(cornerRadius:5))}.buttonStyle(.plain).help("Snapping · N").accessibilityLabel("Snapping").accessibilityValue(store.snapping ? "On":"Off")
                 Menu {
                     Toggle("Show Grid",isOn:$store.gridVisible)
-                    Button("Time"){var next=store.document;next.sequence.musicalGrid=nil;store.replace(next)}
+                    Button("Time"){store.gridMode = .time}
+                    Button("Frames"){store.gridMode = .frames}
                     Button("Beats"){store.setGrid{_ in}}
                 } label: {Image(systemName:"grid").frame(width:30,height:30)}.menuStyle(.borderlessButton).fixedSize().help("Grid").accessibilityLabel("Grid")
                 Spacer()
@@ -151,9 +154,13 @@ struct WorkspaceView: View {
                 else {Button("Transcribe"){store.transcribeSelected()}.disabled(store.selectedClip?.assetID==nil || !LocalTranscription.supports(locale:.current)).help(LocalTranscription.supports(locale:.current) ? "On-device transcription":"On-device transcription unavailable")}
 
             } else if store.panel == .effects {EffectBrowser(store:store)}
-            else if store.panel == .audio {ScrollView{VStack(spacing:16){AudioControls(store:store);audioInspector;MusicalGridControls(store:store)}}}
+            else if store.panel == .audio {
+                Picker("Audio tools",selection:$audioPage){Text("Mix").tag(0);Text("Beats").tag(1)}.pickerStyle(.segmented)
+                ScrollView{if audioPage==0{AudioControls(store:store)}else{VStack(spacing:16){audioInspector;MusicalGridControls(store:store)}}}
+            }
             else if store.panel == .multicam {multicamInspector}
             else if store.panel == .drawing {DrawingControls(store:store)}
+            else if store.panel == .markers {MarkerControls(store:store)}
             else if let clip = store.selectedClip {
                 ScrollView {VStack(alignment:.leading,spacing:14){
                 TextField("Name",text:Binding(get:{store.selectedClip?.name ?? ""},set:{text in store.editSelected{$0.name=text}})).textFieldStyle(.roundedBorder)
@@ -166,22 +173,14 @@ struct WorkspaceView: View {
                     Slider(value:Binding(get:{store.selectedClip?.speed ?? 1},set:{ v in store.setSpeed(v) }),in:0.25...4,step:0.05,onEditingChanged:gesture)
                     Toggle("Preserve pitch",isOn:Binding(get:{store.selectedClip?.preservesPitch ?? true},set:{v in store.editSelected{$0.preservesPitch=v}}))
                 }
-                if !store.selectedUsesOpacity {
-                HStack { Text("Level"); Spacer(); Text(clip.volume.baseValue == 0 ? "−∞ dB" : String(format:"%.1f dB",20*log10(clip.volume.baseValue))).monospacedDigit() }
-                Slider(value:Binding(get:{store.selectedClip?.volume.baseValue ?? 1},set:{v in store.editSelected{$0.volume.baseValue=v}}),in:0...AudioSettings.maximumLinearGain,onEditingChanged:gesture)
-                }
-                HStack {
-                    Text("Fade in")
-                    TextField("Seconds",value:Binding(get:{fadeDuration(clip,incoming:true)},set:{v in store.setFade(max(0,min(clip.duration.seconds,v)),incoming:true)}),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).accessibilityLabel("Fade in seconds")
-                    Text("out")
-                    TextField("Seconds",value:Binding(get:{fadeDuration(clip,incoming:false)},set:{v in store.setFade(max(0,min(clip.duration.seconds,v)),incoming:false)}),format:.number.precision(.fractionLength(2))).textFieldStyle(.roundedBorder).accessibilityLabel("Fade out seconds")
-                }
-                HStack { Text("Opacity"); Slider(value:Binding(get:{store.selectedClip?.opacity.baseValue ?? 1},set:{v in store.editSelected{$0.opacity.baseValue=v}}),in:0...1,onEditingChanged:gesture) }
+                AutomationControls(store:store)
                 HStack {
                     Text("Start").foregroundStyle(.secondary)
                     TextField("Seconds",value:Binding(get:{store.selectedClip?.start.seconds ?? 0},set:{v in store.setClipStart(v)}),format:.number.precision(.fractionLength(5))).textFieldStyle(.roundedBorder).accessibilityLabel("Clip start in seconds")
                 }
                 VisualControls(store:store)
+                TrackControls(store:store)
+                EditControls(store:store)
                 Text(String(format:"%.3f s",clip.duration.seconds)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }}
             }

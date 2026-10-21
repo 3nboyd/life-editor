@@ -24,7 +24,7 @@ struct TransitionsBrowser:View {
                 if TransitionResolver.resolve(transition,in:store.document)==nil {Text("Unavailable").foregroundStyle(.orange).font(.caption)}
                 Picker("Direction",selection:Binding(get:{store.currentTransition?.direction ?? 0},set:{v in store.editTransition{$0.direction=v}})){Image(systemName:"arrow.left").tag(0);Image(systemName:"arrow.right").tag(1);Image(systemName:"arrow.up").tag(2);Image(systemName:"arrow.down").tag(3)}.pickerStyle(.segmented)
                 if transition.kind == .dipColor {
-                    ColorPicker("Color",selection:Binding(get:{let c=store.currentTransition?.color ?? .black;return Color(.sRGB,red:c.red,green:c.green,blue:c.blue,opacity:c.alpha)},set:{value in guard let c=NSColor(value).usingColorSpace(.sRGB) else{return};store.editTransition{$0.color = .init(red:c.redComponent,green:c.greenComponent,blue:c.blueComponent,alpha:c.alphaComponent)}}))
+                    SharedColorPicker(label:"Color",color:Binding(get:{store.currentTransition?.color ?? .black},set:{value in store.editTransition{$0.color=value}}),store:store)
                 }
                 Toggle("Bypass",isOn:Binding(get:{!(store.currentTransition?.isEnabled ?? true)},set:{value in store.editTransition{$0.isEnabled = !value}})).toggleStyle(.button)
             }

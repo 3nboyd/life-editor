@@ -3,10 +3,13 @@ on: [push, pull_request]
 jobs:
   mac:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
-      - run: scripts/test.sh
+      - name: Native tests
+        timeout-minutes: 10
+        run: scripts/test.sh
         env:
           LIFE_RUN_MEDIA_INTEGRATION: "1"
       - run: scripts/build-app.sh

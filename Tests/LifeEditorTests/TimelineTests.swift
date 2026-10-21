@@ -4,7 +4,7 @@ import LifeCore
 @testable import LifeEditor
 private func tl(_ n:Int64,_ d:Int64=1)->RationalTime { .init(value:n,timescale:d) }
 @MainActor @Test func timelineSnapsToAnchoredMusicButPrioritizesExplicitTargets() throws {
-    let store=EditorStore(); store.pixelsPerSecond=100;store.playhead=20
+    let store=EditorStore();store.gridMode = .beats; store.pixelsPerSecond=100;store.playhead=20
     store.document=ProjectDocument(sequence:Sequence(musicalGrid:MusicalGrid(bpm:120,anchors:[BeatAnchor(time:.zero,beatIndex:0),BeatAnchor(time:tl(2),beatIndex:4),BeatAnchor(time:tl(5),beatIndex:8)])))
     let canvas=TimelineCanvas(store:store)
     let beat=try #require(canvas.snappedTime(2.77))

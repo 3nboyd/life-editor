@@ -37,8 +37,8 @@ public struct AutomationEnvelope: Codable, Equatable, Sendable {
     }
 }
 public struct TitleContent: Codable, Equatable, Sendable {
-    public var text: String; public var fontSize: Double; public var style: TitleStyle?
-    public init(text: String, fontSize: Double = 64, style: TitleStyle? = nil) { self.text=text; self.fontSize=fontSize; self.style=style }
+    public var text: String; public var fontSize: Double; public var style: TitleStyle?; public var animation: TitleAnimation?
+    public init(text: String, fontSize: Double = 64, style: TitleStyle? = nil, animation: TitleAnimation? = nil) { self.text=text; self.fontSize=fontSize; self.style=style; self.animation=animation }
 }
 public struct Clip: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID; public var name: String; public var assetID: UUID?
@@ -65,8 +65,8 @@ public struct Track: Identifiable, Codable, Equatable, Sendable {
     public init(id: UUID = UUID(), name: String, kind: TrackKind, clips: [Clip] = [], isMuted: Bool = false, isHidden: Bool = false, isLocked: Bool = false) { self.id=id; self.name=name; self.kind=kind; self.clips=clips; self.isMuted=isMuted; self.isHidden=isHidden; self.isLocked=isLocked }
 }
 public struct Marker: Identifiable, Codable, Equatable, Sendable {
-    public var id: UUID; public var time: RationalTime; public var duration: RationalTime; public var name: String; public var note: String; public var clipID: UUID?
-    public init(id: UUID = UUID(), time: RationalTime, duration: RationalTime = .zero, name: String = "", note: String = "", clipID: UUID? = nil) { self.id=id; self.time=time; self.duration=duration; self.name=name; self.note=note; self.clipID=clipID }
+    public var id: UUID; public var time: RationalTime; public var duration: RationalTime; public var name: String; public var note: String; public var clipID: UUID?; public var color: RGBAColor?
+    public init(id: UUID = UUID(), time: RationalTime, duration: RationalTime = .zero, name: String = "", note: String = "", clipID: UUID? = nil, color: RGBAColor? = nil) { self.id=id; self.time=time; self.duration=duration; self.name=name; self.note=note; self.clipID=clipID; self.color=color }
 }
 public struct MulticamCut: Codable, Equatable, Sendable {
     public var time: RationalTime; public var angleID: UUID
@@ -127,6 +127,9 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             }
             if let visual=clip.visual, !visual.isValid { throw DocumentError.invalidTiming }
             if let style=clip.title?.style, !style.isValid { throw DocumentError.invalidTiming }
+            if let animation=clip.title?.animation {
+                guard animation.isValid, validTime(try animation.elapsedTime(at:clip.duration),signed:true) else { throw DocumentError.invalidTiming }
+            }
             for effect in clip.effects ?? [] {
                 guard !effect.stableID.isEmpty, effect.strength.isFinite, (0...1).contains(effect.strength), effect.parameters.values.allSatisfy(\.isFinite) else { throw DocumentError.invalidTiming }
                 if let definition=NativeEffectRegistry.definition(for:effect.stableID) {
@@ -163,6 +166,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             for (left,right) in zip(ordered,ordered.dropFirst()) where left.end > right.start { throw DocumentError.overlap }
         }
         for marker in sequence.markers {
+            if let color=marker.color, !color.isValid { throw DocumentError.invalidTiming }
             guard validTime(marker.time), validTime(marker.duration), validTime(try marker.time.checkedAdding(marker.duration)) else { throw DocumentError.invalidTiming }
         }
         let transitions=sequence.transitions ?? []

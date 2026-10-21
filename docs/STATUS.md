@@ -1,7 +1,8 @@
 # Status
 
-Version: pre-1.0 development. No complete phase gate is closed. The full scope is
-retained in ROADMAP.md; publication of source is not a claim of release readiness.
+Version: pre-1.0 development. The Phase 0 technical foundation workflow is
+verified on the local M4; later phase gates remain open. The full scope is retained
+in ROADMAP.md; source publication is not a claim of release readiness.
 
 ## Implemented and integrated
 
@@ -14,6 +15,13 @@ portable collection/relative references, bookmarks/relink and recovery selection
 multicam groups/cuts/audition with persistent master; reader/writer exports with
 six formats/ranges/progress/cancel/atomic replacement.
 
+Direct timeline automation supports points, level/fade handles, linear/eased/hold
+curves, numeric navigation and exact gesture undo. Marker controls include notes,
+colors, ranges and source anchoring. A shared hue/SV/RGB/HEX/alpha popover supplies
+recent/saved swatches and viewer sampling. Six deterministic title entrances
+preserve animation clocks through trimming/splitting/retiming. Standard commands
+include recent/duplicate/revert and debounced autosave, with serialized recovery.
+
 Native integration verifies real frames and samples. Tests include exact1-second
 retimed audio at48k, pitch/onset/fades, rendered preset/transform/title output,
 multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
@@ -23,14 +31,14 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 - Complete manual/timecode/waveform-sync workflow, drift correction preview,
   selected-range re-recording, video/audio switching modes and editable cut UI.
 - Insert/overwrite, contextual roll/slip/ripple trims, complete track controls,
-  source-anchored marker UX and full keyframe editing/navigation.
-- Audio normalization UI, loops/crossfades/reverse/freeze and speed ramps.
+  full keyframe copy/paste/multi-point editing and animation of other parameters.
+- Loops/crossfades/reverse/freeze and speed ramps.
 - Adjustment layers and advanced color controls; complete social text animation,
   stickers/shared color tools and crop ratios/straightening. Local transcription
   has capability/privacy guards and source-time mapping but needs real speech QA.
 - Comprehensive metadata/VFR/HDR handling and broad tested codec/container matrix.
-- Complete standard document lifecycle/autosave/revert/recent/duplicate and recovery
-  failure UX; disconnected/full-disk failure fixtures.
+- Complete native document integration and migration paths; disconnected/full-disk
+  failure fixtures.
 - Full VoiceOver/keyboard/hit-target audit, musician/student usability testing,
   M1 performance measurements, adaptive quality and all three owner workflows.
 

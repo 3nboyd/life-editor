@@ -19,7 +19,7 @@ boundary. Real native integration now verifies:
  checkpoint rotation, SRT and effect/style/transform persistence.
 - Tempo/sync synthetic arrays: known tempo/offset and silence handling.
 
-Latest combined native/helper run: **86 tests pass**, including1280×800 native
+Latest combined native/helper run: **105 tests pass**, including1280×800 native
 hosting render, all14 transitions with unchanged project timing and decoded
 preview/export agreement, drawing/shape rendering, grouped selection commands,
 source markers/tempo anchors, conversion cancellation and source protection.
@@ -54,3 +54,18 @@ The clean optimized app build and ad-hoc signature verification pass. App builds
 use a separate scratch directory to avoid mixed compiler artifacts. Armed range
 replacement is tested through app commands, persistence and exact grouped undo/redo;
 synchronized playback checks player readiness before using host-clock scheduling.
+
+
+Additional verified slices: real AppKit point/line/fade mouse interactions and exact
+one-gesture undo; source marker arithmetic overflow rejection; checked marker
+anchor mapping; independent time/frame/beat grids; shared color conversion,
+swatches, compact layout and viewer pixel orientation; six entrance animations,
+deterministic seeks and animation clock preservation. One combined native project
+contains two video layers, an animated title, volume fade and pitch-preserving
+retime, then real editing/undo, atomic save/reopen and decoded export comparison.
+
+Debounced autosave writes the latest edit and refuses a newer unsupported format.
+An injected slow checkpoint proves serialization and cancellation of stale queued
+work. The first hosted CI run exposed older-SDK Core Image Sendable annotations;
+an immutable kernel wrapper addresses that compiler compatibility issue. Hosted
+CI completion is tracked separately from local checks.

@@ -18,7 +18,7 @@ struct ViewerOverlay:View {
                     if NSEvent.modifierFlags.contains(.shift),let current=active.firstIndex(where:{$0.clip.id==store.selection}),current+1<active.count {store.selection=active[current+1].clip.id}
                     else {store.selection=active.first?.clip.id}
                 }
-                if store.drawingMode==0,let clip=store.selectedClip,store.document.sequence.tracks.first(where:{$0.clips.contains(where:{$0.id==clip.id})})?.kind != .audio,clip.start.seconds<=store.playhead,store.playhead<clip.end.seconds {
+                if !store.samplingColor,store.drawingMode==0,let clip=store.selectedClip,store.document.sequence.tracks.first(where:{$0.clips.contains(where:{$0.id==clip.id})})?.kind != .audio,clip.start.seconds<=store.playhead,store.playhead<clip.end.seconds {
                     let visual=clip.visual ?? VisualTransform()
                     let isTitle=clip.title != nil
                     let position=CGPoint(x:origin.x+canvas.width*(visual.x+(isTitle ? (clip.title?.style?.x ?? 0.5)-0.5:0)),y:origin.y+canvas.height*(visual.y+(isTitle ? (clip.title?.style?.y ?? 0.82)-0.5:0)))
@@ -47,7 +47,7 @@ struct ViewerOverlay:View {
                         TextField("Text",text:Binding(get:{store.selectedClip?.title?.text ?? ""},set:{v in store.editSelected{$0.title?.text=v}}),axis:.vertical).textFieldStyle(.roundedBorder).frame(width:min(400,box.width)).position(position).onSubmit{editingText=false}
                     }
                 }
-                if store.drawingMode>0 {
+                if !store.samplingColor,store.drawingMode>0 {
                     Color.clear.contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged{value in
                         let point=GraphicPoint(x:max(0,min(1,(value.location.x-origin.x)/canvas.width)),y:max(0,min(1,(value.location.y-origin.y)/canvas.height)))
                         if stroke.count<10000,stroke.last.map({hypot($0.x-point.x,$0.y-point.y)>0.001}) ?? true {stroke.append(point)}
@@ -56,7 +56,15 @@ struct ViewerOverlay:View {
                         for (index,point) in stroke.enumerated(){let p=CGPoint(x:origin.x+point.x*canvas.width,y:origin.y+point.y*canvas.height);if index==0{path.move(to:p)}else{path.addLine(to:p)}}
                     }.stroke(Color(.sRGB,red:store.drawingColor.red,green:store.drawingColor.green,blue:store.drawingColor.blue,opacity:store.drawingMode==2 ? 0.4:store.drawingColor.alpha),style:StrokeStyle(lineWidth:store.drawingWidth*min(canvas.width,canvas.height),lineCap:.round,lineJoin:.round)).allowsHitTesting(false)
                 }
+                if store.samplingColor{
+                    Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded{value in
+                        let x=(value.location.x-origin.x)/canvas.width,y=(value.location.y-origin.y)/canvas.height
+                        guard (0...1).contains(x),(0...1).contains(y) else{return}
+                        store.sampleViewerColor(x:x,y:y)
+                    }).accessibilityLabel("Sample a viewer color")
+                    VStack{HStack{Label("Sample color",systemImage:"eyedropper").font(.caption);Spacer();Button{store.cancelColorSampling()}label:{Image(systemName:"xmark")}.help("Cancel color sampling · Esc").accessibilityLabel("Cancel color sampling")};Spacer()}.padding(12)
+                }
             }
-        }.allowsHitTesting(store.panel != .multicam)
+        }.onExitCommand{store.cancelColorSampling()}.allowsHitTesting(store.panel != .multicam || store.samplingColor)
     }
 }
