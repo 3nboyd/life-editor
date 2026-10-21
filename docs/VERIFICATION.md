@@ -1,0 +1,56 @@
+# Verification — 2026-10-21
+
+Host: macOS15.6, Apple M4,16GB; Swift6.2.3 CLT compiler/SDK.
+This is not an M1 benchmark. No usability or performance target is claimed met.
+
+After filesystem/host access was expanded, native media services worked. Earlier
+sandbox VideoToolbox failures are historical and are no longer the current test
+boundary. Real native integration now verifies:
+
+- Two composited layers: decoded preview/export pixel agreement.
+- One-second pitch-preserving half-speed audio:48000 decoded samples, pitch near
+ 440Hz, onset within10ms, fade progression.
+- Title-only, still-image, audio-only and multicam camera-cut output.
+- All16 look and16 adjustment graphs produce actual thumbnails; deterministic VHS
+ seed/frame; filtered export matches thumbnail; transforms and styled text render.
+- H.264, HEVC, ProRes, WAV, AIFF and M4A actual stream codecs;48k stereo; resized and
+ selected-range output; monotonic progress; cancelled export preserves destination.
+- Rational timing, grouped undo, malformed data safety, collected transfer,
+ checkpoint rotation, SRT and effect/style/transform persistence.
+- Tempo/sync synthetic arrays: known tempo/offset and silence handling.
+
+Latest combined native/helper run: **86 tests pass**, including1280×800 native
+hosting render, all14 transitions with unchanged project timing and decoded
+preview/export agreement, drawing/shape rendering, grouped selection commands,
+source markers/tempo anchors, conversion cancellation and source protection.
+Audio DSP tests verify gain/pan/channel mapping/three EQ bands, explicit limiter
+ceiling/no latency/sample count, positive automation headroom and preview/export
+samples within0.0001. Stereo integrated loudness agrees with pinned FFmpeg ebur128
+within0.15LU on a gated fixture. Sample peaks are not true-peak measurements.
+
+Four1280×720 muted proxy AVPlayers decoded25frames each in1.114s including startup,
+with7.25µs position spread on this M4 run. This synthetic foundation test does not
+establish full main-viewer30fps, M1 or long-timeline targets. CPU/RSS vary with
+parallel tests and media services run outside the app process.
+
+Native interactive automation remains unavailable (its Node runtime fails to
+initialize); pointer/VoiceOver/manual usability scenarios remain open. A screenshot
+alone does not close a phase gate.
+
+FFmpeg/ffprobe9.0.2 built from official signed source, with GPL/nonfree/autodetect/
+network disabled and only file/pipe protocols. Build verification checks dynamic
+linkage, licenses/config and compiled inventory. WAV→AAC and PPM→ProRes fixtures
+pass; HTTPS is rejected. This is not full format-matrix coverage.
+
+Reader/writer processing replaced AVAssetExportSession after native tests exposed
+retimed audio truncation and an SDK async export callback crash. Pitch processing
+now uses a replaceable offline intermediate shared with playback/export.
+
+Packaging now verifies both helpers, pinned source hash/signature record and required
+license/source materials before bundling. A missing NOTICE fixture correctly
+blocks verification; post-signing inventory hashes are regenerated.
+
+The clean optimized app build and ad-hoc signature verification pass. App builds
+use a separate scratch directory to avoid mixed compiler artifacts. Armed range
+replacement is tested through app commands, persistence and exact grouped undo/redo;
+synchronized playback checks player readiness before using host-clock scheduling.

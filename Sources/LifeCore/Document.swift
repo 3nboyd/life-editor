@@ -1,0 +1,193 @@
+import Foundation
+
+public enum AssetKind: String, Codable, Sendable { case video, audio, image }
+public enum TrackKind: String, Codable, Sendable { case video, audio, image, title, caption, shape, drawing, adjustment }
+public struct MediaAsset: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var url: URL; public var kind: AssetKind; public var duration: RationalTime
+    /// Required native conversion intermediate; original URL retains provenance.
+    public var preparedURL: URL?
+    public init(id: UUID = UUID(), url: URL, kind: AssetKind, duration: RationalTime, preparedURL: URL? = nil) { self.id=id; self.url=url; self.kind=kind; self.duration=duration; self.preparedURL=preparedURL }
+}
+public enum Interpolation: String, Codable, Sendable { case linear, eased, hold }
+public struct AutomationPoint: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var time: RationalTime; public var value: Double; public var interpolation: Interpolation
+    public init(id: UUID = UUID(), time: RationalTime, value: Double, interpolation: Interpolation = .linear) { self.id=id; self.time=time; self.value=value; self.interpolation=interpolation }
+}
+/// Base value is linear gain; normalized points multiply that value. Points use clip-local time.
+public struct AutomationEnvelope: Codable, Equatable, Sendable {
+    public var baseValue: Double; public var points: [AutomationPoint]
+    /// Preserves the exact original curve across trims/splits, including eased segments.
+    public var evaluationOffset: RationalTime
+    public init(baseValue: Double = 1, points: [AutomationPoint] = [], evaluationOffset: RationalTime = .zero) { self.baseValue=baseValue; self.points=points; self.evaluationOffset=evaluationOffset }
+    public func value(at localTime: RationalTime) -> Double {
+        (try? checkedValue(at:localTime)) ?? baseValue
+    }
+    public func checkedValue(at localTime: RationalTime) throws -> Double {
+        let time = try localTime.checkedAdding(evaluationOffset)
+        let sorted = points.sorted { $0.time < $1.time }
+        guard let first = sorted.first else { return baseValue }
+        if time < first.time { return baseValue * first.value }
+        for (left,right) in zip(sorted,sorted.dropFirst()) where time < right.time {
+            if left.interpolation == .hold { return baseValue * left.value }
+            var fraction = try time.checkedSubtracting(left.time).seconds / right.time.checkedSubtracting(left.time).seconds
+            if left.interpolation == .eased { fraction = fraction*fraction*(3-2*fraction) }
+            return baseValue * (left.value + (right.value-left.value)*fraction)
+        }
+        return baseValue * sorted.last!.value
+    }
+}
+public struct TitleContent: Codable, Equatable, Sendable {
+    public var text: String; public var fontSize: Double; public var style: TitleStyle?
+    public init(text: String, fontSize: Double = 64, style: TitleStyle? = nil) { self.text=text; self.fontSize=fontSize; self.style=style }
+}
+public struct Clip: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var name: String; public var assetID: UUID?
+    public var start: RationalTime; public var duration: RationalTime; public var sourceStart: RationalTime
+    public var speed: Double; public var preservesPitch: Bool; public var audioEnabled:Bool?; public var linkID: UUID?; public var groupID: UUID?
+    public var volume: AutomationEnvelope; public var opacity: AutomationEnvelope; public var title: TitleContent?
+    public var effects: [EffectInstance]?; public var visual: VisualTransform?; public var graphic: GraphicContent?; public var audio: AudioSettings?
+    public init(id: UUID = UUID(), name: String = "Clip", assetID: UUID? = nil, start: RationalTime = .zero, duration: RationalTime, sourceStart: RationalTime = .zero, speed: Double = 1, preservesPitch: Bool = true, linkID: UUID? = nil, volume: AutomationEnvelope = .init(), opacity: AutomationEnvelope = .init(), title: TitleContent? = nil, effects: [EffectInstance]? = nil, visual: VisualTransform? = nil, groupID: UUID? = nil, audioEnabled:Bool? = nil, graphic: GraphicContent? = nil, audio: AudioSettings? = nil) {
+        self.id=id; self.name=name; self.assetID=assetID; self.start=start; self.duration=duration; self.sourceStart=sourceStart; self.speed=speed; self.preservesPitch=preservesPitch; self.linkID=linkID; self.volume=volume; self.opacity=opacity; self.title=title; self.effects=effects; self.visual=visual;self.audioEnabled=audioEnabled; self.groupID=groupID; self.graphic=graphic; self.audio=audio
+    }
+    public var end: RationalTime { start + duration }
+    public func checkedSourceTime(at sequenceTime: RationalTime) throws -> RationalTime {
+        let local=try sequenceTime.checkedSubtracting(start)
+        let offset=try local.checkedScaled(by:Int64((speed*1_000_000).rounded()),over:1_000_000)
+        return try sourceStart.checkedAdding(offset)
+    }
+    public func sourceTime(at sequenceTime: RationalTime) -> RationalTime {
+        sourceStart + (sequenceTime-start).scaled(by: Int64((speed*1_000_000).rounded()), over: 1_000_000)
+    }
+}
+public struct Track: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var name: String; public var kind: TrackKind; public var clips: [Clip]
+    public var isMuted: Bool; public var isHidden: Bool; public var isLocked: Bool
+    public init(id: UUID = UUID(), name: String, kind: TrackKind, clips: [Clip] = [], isMuted: Bool = false, isHidden: Bool = false, isLocked: Bool = false) { self.id=id; self.name=name; self.kind=kind; self.clips=clips; self.isMuted=isMuted; self.isHidden=isHidden; self.isLocked=isLocked }
+}
+public struct Marker: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var time: RationalTime; public var duration: RationalTime; public var name: String; public var note: String; public var clipID: UUID?
+    public init(id: UUID = UUID(), time: RationalTime, duration: RationalTime = .zero, name: String = "", note: String = "", clipID: UUID? = nil) { self.id=id; self.time=time; self.duration=duration; self.name=name; self.note=note; self.clipID=clipID }
+}
+public struct MulticamCut: Codable, Equatable, Sendable {
+    public var time: RationalTime; public var angleID: UUID
+    public init(time: RationalTime, angleID: UUID) { self.time=time; self.angleID=angleID }
+}
+public struct MulticamGroup: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var angleAssetIDs: [UUID]; public var masterAudioAssetID: UUID?; public var cuts: [MulticamCut]; public var audioAssetIDs:[UUID]?
+    public init(id: UUID = UUID(), angleAssetIDs: [UUID], masterAudioAssetID: UUID? = nil, cuts: [MulticamCut] = [], audioAssetIDs:[UUID]? = nil) { self.id=id; self.angleAssetIDs=angleAssetIDs; self.masterAudioAssetID=masterAudioAssetID; self.cuts=cuts; self.audioAssetIDs=audioAssetIDs }
+}
+public struct ProjectSettings: Codable, Equatable, Sendable {
+    public var width: Int; public var height: Int; public var frameRate: FrameRate; public var audioSampleRate: Int
+    public init(width: Int = 1920, height: Int = 1080, frameRate: FrameRate = .init(), audioSampleRate: Int = 48000) { self.width=width; self.height=height; self.frameRate=frameRate; self.audioSampleRate=audioSampleRate }
+}
+public struct MusicalGrid: Codable, Equatable, Sendable {
+    public var bpm: Double; public var offset: RationalTime; public var beatsPerBar: Int; public var subdivision: Int
+    public var anchors: [BeatAnchor]?; public var swing: Double?; public var beatUnit: Int?
+    public init(bpm: Double = 120, offset: RationalTime = .zero, beatsPerBar: Int = 4, subdivision: Int = 1, anchors: [BeatAnchor]? = nil, swing: Double? = nil, beatUnit: Int? = nil) { self.bpm=bpm; self.offset=offset; self.beatsPerBar=beatsPerBar; self.subdivision=subdivision; self.anchors=anchors; self.swing=swing; self.beatUnit=beatUnit }
+}
+public struct Sequence: Codable, Equatable, Sendable {
+    public var settings: ProjectSettings; public var tracks: [Track]; public var markers: [Marker]; public var multicamGroups: [MulticamGroup]; public var musicalGrid: MusicalGrid?; public var transitions: [VideoTransition]?
+    public init(settings: ProjectSettings = .init(), tracks: [Track] = [], markers: [Marker] = [], multicamGroups: [MulticamGroup] = [], musicalGrid: MusicalGrid? = nil, transitions: [VideoTransition]? = nil) { self.settings=settings; self.tracks=tracks; self.markers=markers; self.multicamGroups=multicamGroups; self.musicalGrid=musicalGrid; self.transitions=transitions }
+    public var duration: RationalTime { tracks.flatMap(\.clips).map(\.end).max() ?? .zero }
+}
+public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
+    public static let currentVersion = 1
+    public var version: Int; public var id: UUID; public var name: String; public var sequence: Sequence; public var assets: [MediaAsset]
+    public init(id: UUID = UUID(), name: String = "Untitled", sequence: Sequence = .init(), assets: [MediaAsset] = []) { self.version=Self.currentVersion; self.id=id; self.name=name; self.sequence=sequence; self.assets=assets }
+    public static func decode(_ data: Data) throws -> Self {
+        let result = try JSONDecoder().decode(Self.self, from: data)
+        guard result.version == currentVersion else { throw DocumentError.unsupportedVersion(result.version) }
+        try result.validate(); return result
+    }
+    public func encoded() throws -> Data { try validate(); let encoder=JSONEncoder(); encoder.outputFormatting=[.prettyPrinted,.sortedKeys]; return try encoder.encode(self) }
+    public func validate() throws {
+        guard version == Self.currentVersion else { throw DocumentError.unsupportedVersion(version) }
+        let settings=sequence.settings
+        guard (1...16384).contains(settings.width), (1...16384).contains(settings.height),
+              (1...240000).contains(settings.frameRate.numerator), (1...1001).contains(settings.frameRate.denominator),
+              Double(settings.frameRate.numerator)/Double(settings.frameRate.denominator) <= 240,
+              (8000...192000).contains(settings.audioSampleRate) else { throw DocumentError.invalidTiming }
+        if let grid=sequence.musicalGrid {
+            guard grid.isValid else { throw DocumentError.invalidTiming }
+        }
+        let clips=sequence.tracks.flatMap(\.clips)
+        guard Set(clips.map(\.id)).count == clips.count, Set(sequence.tracks.map(\.id)).count == sequence.tracks.count, Set(assets.map(\.id)).count == assets.count else { throw DocumentError.duplicateID }
+        func validTime(_ time: RationalTime, signed: Bool = false) -> Bool {
+            time.timescale <= 1_000_000_000 && time.seconds.isFinite && abs(time.seconds) <= 86400 && (signed || time >= .zero)
+        }
+        for asset in assets { guard validTime(asset.duration), asset.duration > .zero else { throw DocumentError.invalidTiming } }
+        for clip in clips {
+            guard validTime(clip.start), validTime(clip.duration), clip.duration > .zero, validTime(clip.sourceStart),
+                  clip.speed.isFinite, (0.25...4).contains(clip.speed), clip.volume.baseValue.isFinite, clip.opacity.baseValue.isFinite,
+                  (0...AudioSettings.maximumLinearGain).contains(clip.volume.baseValue), (0...1).contains(clip.opacity.baseValue),
+                  clip.title == nil || (clip.title!.fontSize.isFinite && (1...4096).contains(clip.title!.fontSize)) else { throw DocumentError.invalidTiming }
+            if let audio=clip.audio, !audio.isValid { throw DocumentError.invalidTiming }
+            if let graphic=clip.graphic {
+                guard clip.title == nil, graphic.isValid else { throw DocumentError.invalidTiming }
+            }
+            if let visual=clip.visual, !visual.isValid { throw DocumentError.invalidTiming }
+            if let style=clip.title?.style, !style.isValid { throw DocumentError.invalidTiming }
+            for effect in clip.effects ?? [] {
+                guard !effect.stableID.isEmpty, effect.strength.isFinite, (0...1).contains(effect.strength), effect.parameters.values.allSatisfy(\.isFinite) else { throw DocumentError.invalidTiming }
+                if let definition=NativeEffectRegistry.definition(for:effect.stableID) {
+                    for parameter in definition.parameters {
+                        if let value=effect.parameters[parameter.name], !parameter.range.contains(value) { throw DocumentError.invalidTiming }
+                    }
+                }
+            }
+            let end=try clip.start.checkedAdding(clip.duration)
+            guard validTime(end) else { throw DocumentError.invalidTiming }
+            let sourceDuration=try clip.duration.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
+            let sourceEnd=try clip.sourceStart.checkedAdding(sourceDuration)
+            guard validTime(sourceEnd) else { throw DocumentError.invalidTiming }
+            if let asset=assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, sourceEnd > asset.duration { throw DocumentError.sourceBoundary }
+            for (envelope,maximum) in [(clip.volume,AudioSettings.maximumLinearGain),(clip.opacity,1.0)] {
+                guard envelope.points.allSatisfy({ point in
+                    let effective=envelope.baseValue*point.value
+                    return effective.isFinite && effective <= maximum
+                }) else { throw DocumentError.invalidTiming }
+                guard validTime(envelope.evaluationOffset,signed:true) else { throw DocumentError.invalidTiming }
+                _ = try envelope.evaluationOffset.checkedAdding(clip.duration)
+                let sortedPoints=envelope.points.sorted { $0.time < $1.time }
+                for (left,right) in zip(sortedPoints,sortedPoints.dropFirst()) {
+                    _ = try right.time.checkedSubtracting(left.time)
+                }
+                for point in envelope.points {
+                    guard validTime(point.time), point.value.isFinite, point.value >= 0 else { throw DocumentError.invalidTiming }
+                    _ = try point.time.checkedAdding(RationalTime(value:-envelope.evaluationOffset.value,timescale:envelope.evaluationOffset.timescale))
+                }
+            }
+        }
+        for track in sequence.tracks {
+            let ordered=track.clips.sorted { $0.start < $1.start }
+            for (left,right) in zip(ordered,ordered.dropFirst()) where left.end > right.start { throw DocumentError.overlap }
+        }
+        for marker in sequence.markers {
+            guard validTime(marker.time), validTime(marker.duration), validTime(try marker.time.checkedAdding(marker.duration)) else { throw DocumentError.invalidTiming }
+        }
+        let transitions=sequence.transitions ?? []
+        guard Set(transitions.map(\.id)).count == transitions.count else { throw DocumentError.duplicateID }
+        for transition in transitions {
+            guard validTime(transition.duration), transition.duration > .zero, transition.color.isValid, (0...3).contains(transition.direction) else { throw DocumentError.invalidTiming }
+        }
+        for group in sequence.multicamGroups {
+            for cut in group.cuts { guard validTime(cut.time) else { throw DocumentError.invalidTiming } }
+        }
+    }
+}
+public enum DocumentError: Error, Equatable { case unsupportedVersion(Int), invalidTiming, duplicateID, clipNotFound, trackNotFound, lockedTrack, overlap, sourceBoundary, invalidSplit }
+public struct ProjectSnapshot: Sendable { public let document: ProjectDocument; public init(document: ProjectDocument) { self.document=document } }
+public struct EvaluatedClip: Sendable { public let clip: Clip; public let trackID: UUID; public let sourceTime: RationalTime; public let volume: Double; public let opacity: Double }
+public enum TimelineEvaluator {
+    public static func evaluate(_ snapshot: ProjectSnapshot, at time: RationalTime) -> [EvaluatedClip] {
+        snapshot.document.sequence.tracks.filter { !$0.isHidden }.flatMap { track in
+            track.clips.filter { $0.start <= time && time < $0.end }.compactMap { clip -> EvaluatedClip? in
+                guard let local=try? time.checkedSubtracting(clip.start),
+                      let source=try? clip.checkedSourceTime(at:time),
+                      let volume=try? clip.volume.checkedValue(at:local),
+                      let opacity=try? clip.opacity.checkedValue(at:local) else { return nil }
+                return EvaluatedClip(clip:clip,trackID:track.id,sourceTime:source,volume:track.isMuted ? 0 : volume,opacity:opacity)
+            }
+        }
+    }
+}

@@ -1,0 +1,14 @@
+
+.relay/state.json
+
+.relay/backups/
+.build/
+.swiftpm/
+dist/
+.DS_Store
+.ffmpeg-build/
+.local-helpers/
+handoff/
+.codex/
+.relay/*
+!.relay/ROUTING.md

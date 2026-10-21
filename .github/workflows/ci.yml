@@ -1,0 +1,16 @@
+name: Source checks
+on: [push, pull_request]
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - run: scripts/test.sh
+        env:
+          LIFE_RUN_MEDIA_INTEGRATION: "1"
+      - run: scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LifeEditor-source-build
+          path: dist/
