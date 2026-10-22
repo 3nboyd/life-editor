@@ -28,11 +28,11 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
 
-- Complete timecode synchronization, drift correction preview and richer direct
+- Manual-marker synchronization, drift correction preview and richer direct
   cut refinement.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
-- Loops/crossfades/reverse/freeze and speed ramps.
+- Loops/crossfades/reverse and speed ramps; broader freeze integration.
 - Adjustment layers and advanced color controls; complete social text animation,
   stickers/shared color tools and crop ratios/straightening. Local transcription
   has capability/privacy guards and source-time mapping but needs real speech QA.
@@ -65,10 +65,15 @@ Apply; undo restores the exact original document. Unsupported multicam splices a
 ambiguous cross-track relationships are rejected. Real filmstrips use bounded
 thumbnail jobs, and per-track heights persist locally with keyboard/VoiceOver controls.
 Native timecode reading validates 32/64-bit tracks, rational clocks, drop-frame flags
-and day rollover; synchronization UI integration is in progress. Oriented still images
+and day rollover. Waveform/timecode alignment uses reviewed candidates with a visible
+reference and rejects stale results. Oriented still images
 retain their display geometry while thumbnails decode at bounded size. Waveforms
 remain available in memory if the disposable disk cache cannot be written.
 
-Local full native/helper verification:134 tests pass, plus the targeted cache-storage
-failure test. Optimized ad-hoc app build passes. These measurements are from the local
+An explicit source-boundary Freeze action creates a silent, detached clip referencing
+the last valid source frame. Native tests compare its preview/export color to ordinary
+playback, verify silence, and exercise VFR timing, persistence, undo and cancellation.
+Freeze does not yet support speed/slip/roll or multicam source extensions.
+
+Local full native/helper verification:144 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
