@@ -62,9 +62,9 @@ extension RationalTime {
 
     private func nativeProbe(_ url: URL) async throws -> MediaProbe {
         try Task.checkCancellation()
-        if let image = NSImage(contentsOf: url), let bitmap = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        if let dimensions=StillImage.dimensions(url) {
             return MediaProbe(asset: MediaAsset(url: url, kind: .image, duration: .init(value: 5, timescale: 1)),
-                              width: bitmap.width, height: bitmap.height, frameRate: 0, hasVideo: false, hasAudio: false)
+                              width: dimensions.width, height: dimensions.height, frameRate: 0, hasVideo: false, hasAudio: false)
         }
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration)
@@ -96,11 +96,12 @@ extension RationalTime {
 
     public func thumbnail(asset: MediaAsset, at time: RationalTime = .zero, effects: [EffectInstance] = []) async throws -> CGImage {
         let source: CIImage
-        if asset.kind == .image, let image = CIImage(contentsOf: asset.preparedURL ?? asset.url) { source = image }
+        if asset.kind == .image, let image = StillImage.thumbnail(asset.preparedURL ?? asset.url) { source = image }
         else {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: asset.preparedURL ?? asset.url))
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 320, height: 180)
+            generator.requestedTimeToleranceBefore = .zero;generator.requestedTimeToleranceAfter = .zero
             source = CIImage(cgImage: try await generator.image(at: time.cmTime).image)
         }
         let result = EffectRenderer.apply(effects, to: source, time: time)
@@ -321,7 +322,7 @@ extension RationalTime {
                 guard let reference = document.assets.first(where: { $0.id == assetID }),
                       FileManager.default.fileExists(atPath: (reference.preparedURL ?? reference.url).path) else { throw MediaError.missingAsset(assetID) }
                 if reference.kind == .image {
-                    guard let image = CIImage(contentsOf: reference.preparedURL ?? reference.url) else { throw MediaError.unsupported(reference.url.lastPathComponent) }
+                    guard let image = StillImage.original(reference.preparedURL ?? reference.url) else { throw MediaError.unsupported(reference.url.lastPathComponent) }
                     if !track.isHidden {
                         let extent = image.extent
                         let scale = min(size.width / extent.width, size.height / extent.height)
