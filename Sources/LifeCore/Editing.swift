@@ -2,6 +2,9 @@ import Foundation
 
 public enum EditCommand: Sendable {
     case replace(ProjectDocument)
+    case insertCopies(clipIDs:Set<UUID>,at:RationalTime)
+    case overwriteCopies(clipIDs:Set<UUID>,at:RationalTime)
+    case rippleTrim(clipID:UUID,start:RationalTime,end:RationalTime)
     case split(clipID: UUID, at: RationalTime)
     case move(clipID: UUID, to: RationalTime)
     case trim(clipID: UUID, start: RationalTime, end: RationalTime)
@@ -59,6 +62,7 @@ public enum EditCommand: Sendable {
         var next=document
         switch command {
         case .replace(let replacement): next=replacement
+        case .insertCopies,.overwriteCopies,.rippleTrim:next=try SpliceEditing.proposal(for:command,in:document).document
         case .move(let id, let time):
             let original=try find(id)
             let time=editTime(time,for:original)

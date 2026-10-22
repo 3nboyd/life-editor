@@ -713,6 +713,40 @@ import LifeCore
         #expect(zip(rangeExport,rangeSamples).allSatisfy {abs($0-$1)<=1.0/32768.0})
     }
 
+    @Test(.enabled(if:ProcessInfo.processInfo.environment["LIFE_RUN_MEDIA_INTEGRATION"] == "1"))
+    func testSpliceProposalUndoSaveAndDecodedExport() async throws {
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("life-splice-\(UUID())")
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:directory)}
+        let redURL=directory.appendingPathComponent("red.mov"),blueURL=directory.appendingPathComponent("blue.mov")
+        try await makeVideo(redURL,color:CIColor(red:1,green:0,blue:0));try await makeVideo(blueURL,color:CIColor(red:0,green:0,blue:1))
+        let pipeline=MediaPipeline(),red=try await pipeline.probe(redURL).asset,blue=try await pipeline.probe(blueURL).asset
+        let first=Clip(assetID:red.id,duration:.init(value:1,timescale:1)),second=Clip(assetID:blue.id,start:.init(value:2,timescale:1),duration:.init(value:1,timescale:1))
+        let document=ProjectDocument(sequence:.init(settings:.init(width:64,height:64),tracks:[.init(name:"Video",kind:.video,clips:[first,second])]),assets:[red,blue])
+        let cases:[(String,EditCommand,[(Double,Int?)])]=[
+            ("insert",.insertCopies(clipIDs:[second.id],at:.init(value:1,timescale:2)),[(0.25,0),(0.75,2),(1.75,0),(2.5,nil),(3.5,2)]),
+            ("overwrite",.overwriteCopies(clipIDs:[second.id],at:.init(value:1,timescale:4)),[(0.1,0),(0.5,2),(1.5,nil),(2.5,2)]),
+            ("ripple",.rippleTrim(clipID:first.id,start:.init(value:1,timescale:4),end:.init(value:1,timescale:1)),[(0.1,0),(0.9,nil),(1.9,2)])]
+        for (name,command,checks) in cases {
+            let proposal=try SpliceEditing.proposal(for:command,in:document)
+            let editor=ProjectEditor(document:document);try editor.perform(.replace(proposal.document));editor.undo();#expect(editor.document==document);editor.redo()
+            let package=directory.appendingPathComponent(name+".lifeedit");try ProjectPackage.write(editor.document,to:package)
+            let reopened=try ProjectPackage.read(from:package);#expect(reopened==proposal.document)
+            let prepared=try await pipeline.prepare(.init(document:reopened))
+            let preview=AVAssetImageGenerator(asset:prepared.playerItem.asset);preview.videoComposition=prepared.playerItem.videoComposition
+            preview.requestedTimeToleranceBefore = .zero;preview.requestedTimeToleranceAfter = .zero
+            let output=directory.appendingPathComponent(name+".mp4");try await pipeline.export(.init(document:reopened),to:output)
+            let exported=AVAssetImageGenerator(asset:AVURLAsset(url:output));exported.requestedTimeToleranceBefore = .zero;exported.requestedTimeToleranceAfter = .zero
+            for (seconds,channel) in checks {
+                let time=CMTime(seconds:seconds,preferredTimescale:600)
+                let expected=pixel(try await preview.image(at:time).image),actual=pixel(try await exported.image(at:time).image)
+                if let channel {#expect(expected[channel]>200);#expect(actual[channel]>200)}
+                else {#expect(expected.prefix(3).allSatisfy{$0<5});#expect(actual.prefix(3).allSatisfy{$0<5})}
+                #expect(zip(expected,actual).allSatisfy{abs(Int($0)-Int($1))<8})
+            }
+        }
+    }
+
     private func makeVideo(_ url: URL, color: CIColor, width: Int = 64, height: Int = 64, frames: Int = 30, changesHalfway: Bool = false) async throws {
         // Optional developer fixture helper only; no FFmpeg dependency is linked or shipped.
         // Raw frames avoid relying on an encoder merely to exercise the decoder/compositor.
