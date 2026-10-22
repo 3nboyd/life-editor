@@ -165,3 +165,20 @@ import LifeCore
     for _ in 0..<3000{store.step(-1)}
     #expect(store.playheadTime == .zero)
 }
+
+@MainActor @Test func placementPreviewFitsPracticalWindowWithSelectedClip() throws {
+    _ = NSApplication.shared
+    let store=EditorStore(),clip=Clip(duration:.init(value:2,timescale:1),title:.init(text:"Verse"))
+    store.replace(ProjectDocument(sequence:Sequence(tracks:[Track(name:"Titles",kind:.title,clips:[clip])])))
+    store.selection=clip.id;store.selectedIDs=[clip.id]
+    store.previewPlacement(.insertCopies(clipIDs:[clip.id],at:.init(value:1,timescale:1)),title:"Insert")
+    let host=NSHostingView(rootView:WorkspaceView(store:store).preferredColorScheme(.dark))
+    host.frame=NSRect(x:0,y:0,width:1280,height:800);host.layoutSubtreeIfNeeded()
+    #expect(host.fittingSize.width<=1280);#expect(host.fittingSize.height<=800)
+    let bitmap=try #require(host.bitmapImageRepForCachingDisplay(in:host.bounds))
+    host.cacheDisplay(in:host.bounds,to:bitmap)
+    let directory=URL(fileURLWithPath:ProcessInfo.processInfo.environment["LIFE_UI_ARTIFACTS"] ?? "/tmp/life-editor-ui-checks",isDirectory:true)
+    try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+    try #require(bitmap.representation(using:.png,properties:[:])).write(to:directory.appendingPathComponent("placement-1280x800.png"))
+    store.cancelPlacement()
+}
