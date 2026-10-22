@@ -15,7 +15,8 @@ final class EditorStore: ObservableObject {
     @Published var selectedAutomationPoint:UUID?
     @Published var automationLane:AutomationLane = .volume
     @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]};if oldValue != selection{cancelColorSampling();selectedAutomationPoint=nil;automationLane=selectedUsesOpacity ? .opacity:.volume}}}
-    @Published var playhead: Double = 0
+    @Published var playheadTime:RationalTime = .zero
+    var playhead:Double {get{playheadTime.seconds}set{playheadTime=time(newValue,audio:true)}}
     @Published var playing = false
     @Published var busy = false
     @Published var importProgress:Double=0
@@ -45,11 +46,17 @@ final class EditorStore: ObservableObject {
     private var videoOutput:AVPlayerItemVideoOutput?
     @Published var safeAreas = false
     @Published var focused = false
+    @Published var autosaveError:String?
     @Published var dirty = false
     @Published var analyzing = false
     @Published var analysisConfidence: Double?
     @Published var gridMode:TimelineGridMode = .time
     @Published var gridVisible = true
+    @Published var switchMode:MulticamSwitchMode = .video{didSet{if oldValue != switchMode{clearAngleAudition()}}}
+    @Published var cameraAudioIDs:Set<UUID>=[]
+    @Published var checkingCameraAudio=false
+    private var cameraAudioTask:Task<Void,Never>?
+    private var cameraAudioSignature=""
     @Published var switchArmed = false
     @Published var syncCandidates:[CameraSyncCandidate]=[]
     @Published var synchronizing=false
@@ -72,6 +79,7 @@ final class EditorStore: ObservableObject {
     @Published var switchRangeEnd:Double=10
     private var activeSwitchRange:(start:RationalTime,end:RationalTime)?
     private var recordedRangeCuts:[MulticamCut]=[]
+    private var recordedRangeAudioCuts:[MulticamCut]=[]
     private var rangeOriginalGroup:MulticamGroup?
     private var recordingPass = false
     let player = AVPlayer()
@@ -89,7 +97,7 @@ final class EditorStore: ObservableObject {
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                self.playhead = time.seconds.isFinite ? time.seconds : 0
+                self.playheadTime = time.seconds.isFinite && time.timescale>0 ? RationalTime(value:time.value,timescale:Int64(time.timescale)):.zero
                 if self.playing && (self.playhead >= self.playbackDocument.sequence.duration.seconds || self.activeSwitchRange.map({self.playhead >= $0.end.seconds}) == true) { self.stopPlayback() }
             }
         }
@@ -113,6 +121,7 @@ final class EditorStore: ObservableObject {
     func undo() { editor.undo(); changed() }
     func redo() { editor.redo(); changed() }
     func rebuild(preview:ProjectDocument? = nil) {
+        refreshCameraAudio()
         syncPreviewing=preview != nil;previewDocument=preview
         if (preview ?? document).sequence.duration == .zero { refreshTask?.cancel();videoOutput=nil;cancelColorSampling(); player.replaceCurrentItem(with:nil); return }
         generation += 1; let token = generation
@@ -143,11 +152,12 @@ final class EditorStore: ObservableObject {
         guard let buffer=videoOutput?.copyPixelBuffer(forItemTime:player.currentTime(),itemTimeForDisplay:nil),let color=ViewerColorSampler.sample(buffer,x:x,y:y) else{error="Seek to a visible frame and sample again.";cancelColorSampling();return}
         let action=colorSampleAction;cancelColorSampling();action?(color)
     }
-    func seek(_ seconds: Double) {
-        let position = min(max(0, seconds), max(0, playbackDocument.sequence.duration.seconds))
-        playhead = position
-        synchronizeCameraPlayers(position,playing:playing)
-        player.seek(to: CMTime(seconds: position, preferredTimescale: 48000), toleranceBefore: .zero, toleranceAfter: .zero)
+    func seek(_ seconds:Double){seek(time(seconds,audio:true))}
+    func seek(_ exact:RationalTime){
+        let position=min(max(.zero,exact),max(.zero,playbackDocument.sequence.duration))
+        playheadTime=position
+        synchronizeCameraPlayers(position.seconds,playing:playing)
+        player.seek(to:CMTime(value:position.value,timescale:CMTimeScale(position.timescale)),toleranceBefore:.zero,toleranceAfter:.zero)
     }
     func togglePlayback() {
         if playing { stopPlayback();return }
@@ -156,16 +166,16 @@ final class EditorStore: ObservableObject {
             if replaceSwitchRange {
                 let start=time(switchRangeStart),end=time(min(switchRangeEnd,document.sequence.duration.seconds))
                 guard end>start else{error="Choose a nonempty switching range.";return}
-                activeSwitchRange=(start,end);recordedRangeCuts=[];rangeOriginalGroup=multicamGroup;seek(start.seconds)
+                activeSwitchRange=(start,end);recordedRangeCuts=[];recordedRangeAudioCuts=[];rangeOriginalGroup=multicamGroup;seek(start)
             }
             beginGesture();recordingPass=true
             if let range=activeSwitchRange,let original=rangeOriginalGroup {
                 do{
-                    let cleared=try MulticamEditing.replacingCuts(in:original,from:range.start,to:range.end,with:[])
+                    let cleared=try replacingPass(in:original,from:range.start,to:range.end)
                     var next=document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1]=cleared
                     try editor.perform(.replace(next));document=editor.document;dirty=true;scheduleRecovery()
                     let initial=cleared.cuts.last(where:{$0.time<=range.start})?.angleID
-                    auditionAngle=initial;if let item=player.currentItem{media.audition(angleID:initial,on:item)}
+                    if let item=player.currentItem{if switchMode != .audio{auditionAngle=initial;media.audition(angleID:initial,on:item)};if switchMode != .video{media.auditionAudio(assetID:MulticamSwitching.selectedAudio(in:cleared,at:range.start) ?? MulticamSwitching.silenceAudioID,on:item)}}
                 }catch{recordingPass=false;activeSwitchRange=nil;rangeOriginalGroup=nil;endGesture();self.error=Self.message(error);return}
             }
         }
@@ -175,11 +185,10 @@ final class EditorStore: ObservableObject {
     func stopPlayback() {
         player.pause();playing=false
         cameraPlayers.values.forEach{$0.pause()}
-        if recordingPass {recordingPass=false;activeSwitchRange=nil;rangeOriginalGroup=nil;recordedRangeCuts=[];endGesture();rebuild()}
-        auditionAngle=nil
-        if let item=player.currentItem {media.audition(angleID:nil,on:item)}
+        if recordingPass {recordingPass=false;activeSwitchRange=nil;rangeOriginalGroup=nil;recordedRangeCuts=[];recordedRangeAudioCuts=[];endGesture();rebuild()}
+        clearAngleAudition()
     }
-    func step(_ direction: Int) { stopPlayback(); seek(playhead + Double(direction) * document.sequence.settings.frameRate.frameDuration.seconds) }
+    func step(_ direction:Int){stopPlayback();do{let rate=document.sequence.settings.frameRate,current=try rate.checkedQuantized(playheadTime);seek(try current.checkedAdding(rate.frameDuration.checkedScaled(by:direction<0 ? -1:1)))}catch{self.error=Self.message(error)}}
     func importMedia() {
         let picker = NSOpenPanel(); picker.allowsMultipleSelection = true
         picker.allowedContentTypes = [.movie, .audio, .image];picker.allowsOtherFileTypes=true
@@ -416,7 +425,7 @@ final class EditorStore: ObservableObject {
         replace(next)
     }
     private func resetSession(){
-        cancelColorSampling();videoOutput=nil
+        autosaveError=nil;cancelColorSampling();videoOutput=nil;cameraAudioTask?.cancel();cameraAudioSignature="";cameraAudioIDs=[];checkingCameraAudio=false
         cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
     }
     func newProject() {
@@ -469,7 +478,7 @@ final class EditorStore: ObservableObject {
         }
         guard var destination else { return false }
         if destination.pathExtension != "lifeedit" { destination.appendPathExtension("lifeedit") }
-        do { try ProjectPackage.write(document,to:destination); projectURL = destination; dirty = false; NSDocumentController.shared.noteNewRecentDocumentURL(destination); return true }
+        do { try ProjectPackage.write(document,to:destination); projectURL = destination; dirty = false;autosaveError=nil; NSDocumentController.shared.noteNewRecentDocumentURL(destination); return true }
         catch { self.error = Self.message(error); return false }
     }
     func refreshCacheUsage(){
@@ -696,7 +705,8 @@ final class EditorStore: ObservableObject {
         replace(next);panel = .multicam
     }
     func angleAvailable(_ asset:MediaAsset)->Bool {
-        playbackDocument.sequence.tracks.flatMap(\.clips).contains{$0.assetID==asset.id && $0.start.seconds<=playhead && playhead<$0.end.seconds}
+        if switchMode != .video && (checkingCameraAudio || !cameraAudioIDs.contains(asset.id)){return false}
+        return playbackDocument.sequence.tracks.flatMap(\.clips).contains{$0.assetID==asset.id && $0.start.seconds<=playhead && playhead<$0.end.seconds}
     }
     func anglePlayer(_ asset:MediaAsset)->AVPlayer {
         if let player=cameraPlayers[asset.id]{return player}
@@ -732,23 +742,55 @@ final class EditorStore: ObservableObject {
             if playing && source>=0 && source<asset.duration.seconds {if preview.status == .readyToPlay{preview.setRate(Float(clip.speed),time:t,atHostTime:host)}else{preview.playImmediately(atRate:Float(clip.speed))}}
         }
     }
+    private func clearAngleAudition(){
+        auditionAngle=nil
+        if let item=player.currentItem{media.audition(angleID:nil,on:item);media.auditionAudio(assetID:nil,on:item)}
+    }
+    private func replacingPass(in original:MulticamGroup,from start:RationalTime,to end:RationalTime)throws->MulticamGroup{
+        var result=original
+        if switchMode != .audio{result=try MulticamEditing.replacingCuts(in:result,from:start,to:end,with:recordedRangeCuts)}
+        if switchMode != .video{result=try MulticamSwitching.replacingAudioCuts(in:result,from:start,to:end,with:recordedRangeAudioCuts)}
+        return result
+    }
+    func refreshCameraAudio(){
+        guard let group=multicamGroup else{return}
+        let assets=document.assets.filter{$0.kind != .image}
+        let signature=group.id.uuidString+assets.map{$0.id.uuidString+($0.preparedURL ?? $0.url).absoluteString}.joined(separator:"|")
+        guard signature != cameraAudioSignature else{return}
+        cameraAudioTask?.cancel();cameraAudioSignature=signature;checkingCameraAudio=true
+        let project=document.id
+        cameraAudioTask=Task{
+            defer{if signature==cameraAudioSignature{checkingCameraAudio=false}}
+            var found:Set<UUID>=[]
+            for asset in assets{
+                do{try Task.checkCancellation();if try await media.audioAvailable(asset:asset){found.insert(asset.id)}}catch{if Task.isCancelled{return}}
+            }
+            guard !Task.isCancelled,document.id==project,signature==cameraAudioSignature else{return}
+            cameraAudioIDs=found
+        }
+    }
     func chooseAngle(_ assetID:UUID){
         guard let asset=document.assets.first(where:{$0.id==assetID}),angleAvailable(asset) else{return}
         auditionAngle=assetID
-        if let item=player.currentItem {media.audition(angleID:assetID,on:item)}
-        guard switchArmed,var group=multicamGroup else{return}
-        let position=time(playhead)
-        let current=group.cuts.filter{$0.time<=position}.max{$0.time<$1.time}?.angleID
-        guard current != assetID else{return}
-        if let range=activeSwitchRange {
-            guard position>=range.start,position<range.end else{return}
-            recordedRangeCuts.removeAll{$0.time==position};recordedRangeCuts.append(.init(time:position,angleID:assetID))
-            guard let original=rangeOriginalGroup,let replacement=try? MulticamEditing.replacingCuts(in:original,from:range.start,to:range.end,with:recordedRangeCuts) else{return}
-            group=replacement
-        }else{group.cuts.removeAll{$0.time==position};group.cuts.append(.init(time:position,angleID:assetID));group.cuts.sort{$0.time<$1.time}}
-        var next=document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1]=group
-        // Recording edits the snapshot model without replacing the player mid-pass.
-        do{try editor.perform(.replace(next));document=editor.document;dirty=true;scheduleRecovery();if !playing{rebuild()}}catch{self.error=Self.message(error)}
+        if let item=player.currentItem{
+            if switchMode != .audio{media.audition(angleID:assetID,on:item)}
+            if switchMode != .video{media.auditionAudio(assetID:assetID,on:item)}
+        }
+        guard switchArmed,let group=multicamGroup else{return}
+        do{
+            let position=try document.sequence.settings.frameRate.checkedQuantized(playheadTime)
+            var updated=try MulticamSwitching.applying(angleID:assetID,at:position,mode:switchMode,to:group,frameRate:document.sequence.settings.frameRate,availableAudioAssetIDs:cameraAudioIDs)
+            guard updated != group else{return}
+            if let range=activeSwitchRange{
+                guard position>=range.start,position<range.end,let original=rangeOriginalGroup else{return}
+                if switchMode != .audio{recordedRangeCuts.removeAll{$0.time==position};recordedRangeCuts.append(.init(time:position,angleID:assetID))}
+                if switchMode != .video{recordedRangeAudioCuts.removeAll{$0.time==position};recordedRangeAudioCuts.append(.init(time:position,angleID:assetID))}
+                updated=try replacingPass(in:original,from:range.start,to:range.end)
+            }
+            var next=document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1]=updated
+            try editor.perform(.replace(next));document=editor.document;dirty=true;scheduleRecovery()
+            if !playing{rebuild()}
+        }catch{self.error=Self.message(error)}
     }
     func findRecovery(){recoverable=RecoveryStore().recoverableProjects()}
     func restoreRecovery(_ snapshot:ProjectDocument){
@@ -765,10 +807,10 @@ final class EditorStore: ObservableObject {
                 try await Task.sleep(for:.seconds(2));try Task.checkCancellation()
                 // Main-actor serialization keeps autosave ordered with explicit Save.
                 if let destination,destination==projectURL,snapshot==document{
-                    try ProjectPackage.write(snapshot,to:destination);dirty=false
+                    try ProjectPackage.write(snapshot,to:destination);dirty=false;autosaveError=nil
                 }
                 try await RecoveryWriter.shared.checkpoint(snapshot)
-            }catch{if !Task.isCancelled{self.error="Autosave or recovery failed: "+Self.message(error)}}
+            }catch{if !Task.isCancelled{autosaveError=Self.message(error);self.error="Autosave or recovery failed: "+Self.message(error)}}
         }
     }
     static func message(_ error: Error) -> String {

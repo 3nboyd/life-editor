@@ -19,7 +19,7 @@ boundary. Real native integration now verifies:
  checkpoint rotation, SRT and effect/style/transform persistence.
 - Tempo/sync synthetic arrays: known tempo/offset and silence handling.
 
-Latest combined native/helper run: **105 tests pass**, including1280×800 native
+Latest combined native/helper run: **118 tests pass**, including1280×800 native
 hosting render, all14 transitions with unchanged project timing and decoded
 preview/export agreement, drawing/shape rendering, grouped selection commands,
 source markers/tempo anchors, conversion cancellation and source protection.
@@ -69,3 +69,27 @@ An injected slow checkpoint proves serialization and cancellation of stale queue
 work. The first hosted CI run exposed older-SDK Core Image Sendable annotations;
 an immutable kernel wrapper addresses that compiler compatibility issue. Hosted
 CI completion is tracked separately from local checks.
+
+
+Hosted macOS VM native-media runs compiled and began tests but stalled in media
+work (including a missing AppleM2ScalerParavirtDriver diagnostic). No hosted native
+pass is claimed. Default CI runs portable/source/UI checks and builds the app;
+workflow dispatch can explicitly enable hardware media integration. Full native
+integration, including helpers, remains required locally on supported hardware
+before release. CI uploads logs and UI render artifacts even on failure.
+
+
+Native waveform fixtures now verify per-channel polarity, 44.1/48kHz source-rate
+retention, exact sample windows, pyramid aggregation/checksums, corruption rebuild,
+file-change invalidation, cancellation and symlink-safe cache cleanup. Limits are
+eight channels and262144 frames per detail window; timeline reads65536-frame
+chunks with at most two overview and two detail jobs.
+
+Independent multicam audio/video/both decisions and stable legacy cut IDs pass
+persistence/undo tests. Known-tone native fixtures prove default continuous master,
+separate video/audio decisions, unchanged unrelated music, exact physical audio
+switch boundaries, live audition/restore and selected-range end restoration.
+Preview/export PCM agrees within one16-bitLSB. App command tests cover mode masks,
+unavailable audio and one-action range undo. NTSC transport retains a rational
+clock;3000 forward/backward steps are exact, and full-width quantization handles
+valid long prime-denominator times without intermediate overflow.

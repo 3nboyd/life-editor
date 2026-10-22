@@ -40,6 +40,7 @@ extension RationalTime {
 
 /// Main-actor orchestration; rendering receives immutable plans and runs off the UI thread.
 @MainActor public final class MediaPipeline {
+    private let audioPlans = NSMapTable<AVPlayerItem, AudioRoutingPlan>(keyOptions:.weakMemory,valueOptions:.strongMemory)
     public init() {}
 
     public static var helpersAvailable: Bool { MediaHelpers.directory != nil }
@@ -125,10 +126,11 @@ extension RationalTime {
                 }
             }
         }
-        let plan = try await compile(snapshot, proxies: proxies)
+        let plan = try await compile(snapshot, proxies: proxies,allowAudition:true)
         let item = AVPlayerItem(asset: plan.composition)
         item.videoComposition = plan.video
         item.audioMix = plan.audio
+        audioPlans.setObject(AudioRoutingPlan(routes:plan.audioRoutes),forKey:item)
         retainCacheLease(CacheLease(plan.cacheURLs), on: item)
         _ = try? CacheStorage().cleanup(protectedURLs: Set(snapshot.document.assets.flatMap { [$0.url, $0.preparedURL].compactMap { $0 } }))
         return PreparedPlayback(playerItem: item, usesProxies: !proxies.isEmpty)
@@ -216,6 +218,35 @@ extension RationalTime {
         (item.customVideoCompositor as? LifeVideoCompositor)?.setAudition(angleID)
     }
 
+    /// Session-local audio override. Nil restores stored decisions; exports never use this override.
+    public func auditionAudio(assetID:UUID?,on item:AVPlayerItem) {
+        guard let plan=audioPlans.object(forKey:item) else {return}
+        item.audioMix=Self.audioMix(routes:plan.routes,override:assetID)
+    }
+
+    private struct AudioRoute {
+        let trackID:CMPersistentTrackID; let assetID:UUID; let clip:Clip; let envelope:AutomationEnvelope; let group:MulticamGroup?; let candidate:Bool
+    }
+    private final class AudioRoutingPlan:NSObject {
+        let routes:[AudioRoute]
+        init(routes:[AudioRoute]) {self.routes=routes}
+    }
+    private static func audioMix(routes:[AudioRoute],override:UUID? = nil)->AVMutableAudioMix {
+        let mix=AVMutableAudioMix()
+        mix.inputParameters=routes.map {route in
+            let input=AVMutableAudioMixInputParameters();input.trackID=route.trackID
+            input.audioTimePitchAlgorithm=route.clip.preservesPitch ? .spectral:.varispeed
+            let enabled:Bool
+            if route.group == nil {enabled=true}
+            else if let override {enabled=route.candidate && route.assetID==override}
+            else {enabled = !route.candidate}
+            if enabled {applyEnvelope(route.envelope,to:input,start:route.clip.start,duration:route.clip.duration)}
+            else {input.setVolume(0,at:.zero)}
+            return input
+        }
+        return mix
+    }
+
     /// Export uses the exact same composition, compositor, and envelopes as playback.
     /// A sibling temporary file protects an existing destination on failure/cancellation.
     public func export(_ snapshot: ProjectSnapshot, to destination: URL, options: ExportOptions = .init(),
@@ -252,9 +283,10 @@ extension RationalTime {
         let audio: AVMutableAudioMix
         let cacheURLs: Set<URL>
         let cacheLease: CacheLease
+        let audioRoutes:[AudioRoute]
     }
 
-    private func compile(_ snapshot: ProjectSnapshot, proxies: [UUID: URL] = [:]) async throws -> Compilation {
+    private func compile(_ snapshot: ProjectSnapshot, proxies: [UUID: URL] = [:],allowAudition:Bool = false) async throws -> Compilation {
         let document = snapshot.document
         try document.validate()
         let composition = AVMutableComposition()
@@ -262,7 +294,7 @@ extension RationalTime {
         let transitions = (document.sequence.transitions ?? []).compactMap { TransitionResolver.resolve($0, in: document) }
         let size = CGSize(width: settings.width, height: settings.height)
         var layers: [RenderLayer] = []
-        var audioInputs: [AVMutableAudioMixInputParameters] = []
+        var audioRoutes:[AudioRoute] = []
         var cacheURLs = Set(proxies.values)
         var leases = [CacheLease(cacheURLs)]
         defer { withExtendedLifetime(leases) {} }
@@ -301,7 +333,7 @@ extension RationalTime {
                     }
                     continue
                 }
-                let group = document.sequence.multicamGroups.first { $0.angleAssetIDs.contains(assetID) || ($0.audioAssetIDs?.contains(assetID) ?? false) }
+                let group = document.sequence.multicamGroups.first { $0.angleAssetIDs.contains(assetID) || $0.masterAudioAssetID == assetID || ($0.audioAssetIDs?.contains(assetID) ?? false) }
                 let asset = AVURLAsset(url: reference.preparedURL ?? reference.url)
                 let videoAsset = AVURLAsset(url: proxies[reference.id] ?? reference.preparedURL ?? reference.url)
                 let sourceTime = try clip.duration.checkedScaled(by: Int64((clip.speed * 1_000_000).rounded()), over: 1_000_000)
@@ -329,30 +361,42 @@ extension RationalTime {
                     let transform = try await source.load(.preferredTransform)
                     layers.append(RenderLayer(trackID: target.trackID, clip: clip, transform: transform, titleImage: nil, multicam: group, renderStart: renderStart, renderEnd: renderEnd))
                 }
-                if !track.isMuted, (clip.audioEnabled ?? true), group == nil || group?.masterAudioAssetID == assetID,
+                if !track.isMuted, (clip.audioEnabled ?? true),
                    let source = try await asset.loadTracks(withMediaType: .audio).first,
                    let target = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
                     var envelope = clip.volume
+                    var audioSource = source
+                    var audioSourceAsset = asset
+                    defer { withExtendedLifetime(audioSourceAsset) {} }
+                    var audioSourceStart = clip.sourceStart
+                    var renderedAudio = false
                     if AudioProcessing.needsProcessing(clip) {
                         let rendered = try await AudioProcessing.prepare(asset: asset, clip: clip)
                         envelope = rendered.envelope
                         cacheURLs.insert(rendered.url); leases.append(CacheLease([rendered.url]))
                         let intermediate = AVURLAsset(url: rendered.url)
                         guard let renderedTrack = try await intermediate.loadTracks(withMediaType: .audio).first else { throw MediaError.exportUnavailable }
-                        try target.insertTimeRange(CMTimeRange(start: .zero, duration: clip.duration.cmTime), of: renderedTrack, at: clip.start.cmTime)
+                        audioSourceAsset = intermediate; audioSource = renderedTrack; audioSourceStart = .zero; renderedAudio = true
                     } else if clip.speed != 1 {
                         let rendered = try await AudioRetime.render(asset: asset, clip: clip)
                         cacheURLs.insert(rendered); leases.append(CacheLease([rendered]))
                         let intermediate = AVURLAsset(url: rendered)
                         guard let renderedTrack = try await intermediate.loadTracks(withMediaType: .audio).first else { throw MediaError.exportUnavailable }
-                        try target.insertTimeRange(CMTimeRange(start: .zero, duration: clip.duration.cmTime), of: renderedTrack, at: clip.start.cmTime)
-                    } else {
-                        try target.insertTimeRange(sourceRange, of: source, at: clip.start.cmTime)
+                        audioSourceAsset = intermediate; audioSource = renderedTrack; audioSourceStart = .zero; renderedAudio = true
                     }
-                    let input = AVMutableAudioMixInputParameters(track: target)
-                    input.audioTimePitchAlgorithm = clip.preservesPitch ? .spectral : .varispeed
-                    Self.applyEnvelope(envelope, to: input, start: clip.start, duration: clip.duration)
-                    audioInputs.append(input)
+                    let boundaries=Array(Set([clip.start,clip.end]+(group?.audioCuts ?? []).map(\.time).filter{$0>clip.start && $0<clip.end})).sorted()
+                    for (left,right) in zip(boundaries,boundaries.dropFirst()) where group.map({MulticamSwitching.selectedAudio(in:$0,at:left)==assetID}) ?? true {
+                        let offset=left-clip.start
+                        let mappedOffset=renderedAudio ? offset : try offset.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
+                        let mappedDuration=renderedAudio ? right-left : try (right-left).checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
+                        try target.insertTimeRange(CMTimeRange(start:(audioSourceStart+mappedOffset).cmTime,duration:mappedDuration.cmTime),of:audioSource,at:left.cmTime)
+                    }
+                    audioRoutes.append(.init(trackID:target.trackID,assetID:assetID,clip:clip,envelope:envelope,group:group,candidate:false))
+                    if allowAudition,group != nil,let auditionTrack=composition.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) {
+                        let audioDuration=renderedAudio ? clip.duration.cmTime:sourceDuration
+                        try auditionTrack.insertTimeRange(CMTimeRange(start:audioSourceStart.cmTime,duration:audioDuration),of:audioSource,at:clip.start.cmTime)
+                        audioRoutes.append(.init(trackID:auditionTrack.trackID,assetID:assetID,clip:clip,envelope:envelope,group:group,candidate:true))
+                    }
                 }
             }
         }
@@ -379,8 +423,14 @@ extension RationalTime {
         video.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
         video.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
         video.instructions = [RenderInstruction(timeRange: CMTimeRange(start: .zero, duration: end), layers: layers, transitions: transitions)]
-        let audio = AVMutableAudioMix(); audio.inputParameters = audioInputs
-        return Compilation(composition: composition, video: video, audio: audio, cacheURLs: cacheURLs, cacheLease: CacheLease(cacheURLs))
+        let audio = Self.audioMix(routes:audioRoutes)
+        return Compilation(composition: composition, video: video, audio: audio, cacheURLs: cacheURLs, cacheLease: CacheLease(cacheURLs),audioRoutes:audioRoutes)
+    }
+
+    /// Checks the actual prepared/native stream, rather than inferring audio from a video asset kind.
+    public func audioAvailable(asset:MediaAsset) async throws -> Bool {
+        try Task.checkCancellation()
+        return try await !AVURLAsset(url:asset.preparedURL ?? asset.url).loadTracks(withMediaType:.audio).isEmpty
     }
 
     private func canvasSource() async throws -> URL {

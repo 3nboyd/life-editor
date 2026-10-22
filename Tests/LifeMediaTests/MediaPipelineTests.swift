@@ -628,6 +628,91 @@ import LifeCore
     private func trace(_ message: String) {
         FileHandle.standardError.write(Data("[LifeMedia integration] \(message)\n".utf8))
     }
+    @Test(.enabled(if:ProcessInfo.processInfo.environment["LIFE_RUN_MEDIA_INTEGRATION"] == "1"))
+    func testIndependentMulticamAudioVideoAndAudition() async throws {
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("life-multicam-audio-\(UUID())")
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        defer {try? FileManager.default.removeItem(at:directory)}
+        func fixture(_ name:String,_ frequency:Int,_ color:String?) throws -> URL {
+            let url=directory.appendingPathComponent(name+(color == nil ? ".wav" : ".mov"))
+            let process=Process();process.executableURL=URL(fileURLWithPath:"/opt/homebrew/bin/ffmpeg")
+            var args=["-v","error","-y"]
+            if let color {args += ["-f","lavfi","-i","color=c=\(color):s=64x64:r=30:d=1"]}
+            args += ["-f","lavfi","-i","sine=frequency=\(frequency):sample_rate=48000:duration=1"]
+            if color != nil {args += ["-c:v","libx264","-pix_fmt","yuv420p"]}
+            args += ["-c:a","pcm_s16le",url.path];process.arguments=args;try process.run();process.waitUntilExit();try #require(process.terminationStatus==0);return url
+        }
+        let pipeline=MediaPipeline()
+        let a=try await pipeline.probe(fixture("a",440,"red")).asset
+        let b=try await pipeline.probe(fixture("b",880,"blue")).asset
+        let master=try await pipeline.probe(fixture("master",220,nil)).asset
+        let music=try await pipeline.probe(fixture("music",110,nil)).asset
+        #expect(try await pipeline.audioAvailable(asset:a))
+        var base=ProjectDocument(sequence:.init(settings:.init(width:64,height:64),tracks:[a,b,master,music].enumerated().map {index,asset in Track(name:"\(index)",kind:index<2 ? .video:.audio,clips:[Clip(assetID:asset.id,duration:.init(value:1,timescale:1))])}))
+        base.assets=[a,b,master,music]
+        base.sequence.multicamGroups=[.init(angleAssetIDs:[a.id,b.id],masterAudioAssetID:master.id,audioAssetIDs:[master.id])]
+        func amplitude(_ samples:[Float],_ frequency:Double,_ start:Double)->Double {
+            let lower=Int(start*48000),count=9600
+            var sum:Double=0
+            let omega=2*Double.pi*frequency/48000
+            for n in 0..<count {sum += Double(samples[lower+n])*sin(omega*Double(lower+n))}
+            return abs(sum)*2/Double(count)
+        }
+        let masterPlayback=try await pipeline.prepare(.init(document:base))
+        let masterReference=try await readAudio(masterPlayback.playerItem.asset,mix:masterPlayback.playerItem.audioMix,channels:2)
+        var cameraReferenceDocument=base
+        cameraReferenceDocument.sequence.multicamGroups[0].audioCuts=[.init(time:.zero,angleID:b.id)]
+        let cameraPlayback=try await pipeline.prepare(.init(document:cameraReferenceDocument))
+        let cameraReference=try await readAudio(cameraPlayback.playerItem.asset,mix:cameraPlayback.playerItem.audioMix,channels:2)
+        for mode in MulticamSwitchMode.allCases {
+            var document=base
+            document.sequence.multicamGroups[0]=try MulticamSwitching.applying(angleID:b.id,at:.init(value:1,timescale:2),mode:mode,to:base.sequence.multicamGroups[0],frameRate:.init(),availableAudioAssetIDs:[a.id,b.id])
+            let editor=ProjectEditor(document:base);try editor.perform(.replace(document));editor.undo();#expect(editor.document==base);editor.redo()
+            let package=directory.appendingPathComponent(mode.rawValue+".lifeedit");try ProjectPackage.write(editor.document,to:package)
+            let snapshot=ProjectSnapshot(document:try ProjectPackage.read(from:package))
+            let prepared=try await pipeline.prepare(snapshot)
+            let preview=try await readAudio(prepared.playerItem.asset,mix:prepared.playerItem.audioMix,channels:2)
+            #expect(amplitude(preview,220,0.1)>0.1);#expect(amplitude(preview,110,0.6)>0.1)
+            let expectedFrequency:Double=mode == .video ? 220:880
+            #expect(amplitude(preview,expectedFrequency,0.6)>0.1)
+            #expect(amplitude(preview,440,0.6)<0.01)
+            // The boundary is exactly frame15/sample24000, without an implicit crossfade.
+            #expect(zip(preview.prefix(24000),masterReference.prefix(24000)).allSatisfy{abs($0-$1)<0.0000001})
+            if mode != .video {#expect(zip(preview.dropFirst(24000),cameraReference.dropFirst(24000)).allSatisfy{abs($0-$1)<0.0000001})}
+            let generator=AVAssetImageGenerator(asset:prepared.playerItem.asset);generator.videoComposition=prepared.playerItem.videoComposition
+            let frame=pixel(try await generator.image(at:CMTime(value:3,timescale:4)).image)
+            #expect(mode == .audio ? frame[0]>200 : frame[2]>200)
+            let output=directory.appendingPathComponent(mode.rawValue+".mp4");try await pipeline.export(snapshot,to:output)
+            let exported=try await readAudio(AVURLAsset(url:output),channels:2)
+            #expect(abs(amplitude(exported,expectedFrequency,0.6)-amplitude(preview,expectedFrequency,0.6))<0.015)
+            #expect(abs(exported.count-preview.count)<2048)
+            let lossless=directory.appendingPathComponent(mode.rawValue+".wav")
+            try await pipeline.export(snapshot,to:lossless,options:.init(format:.wav))
+            let exact=try await readAudio(AVURLAsset(url:lossless),channels:2)
+            #expect(exact.count==preview.count)
+            #expect(zip(exact,preview).allSatisfy {abs($0-$1)<=1.0/32768.0})
+            pipeline.auditionAudio(assetID:a.id,on:prepared.playerItem)
+            let audition=try await readAudio(prepared.playerItem.asset,mix:prepared.playerItem.audioMix,channels:2)
+            #expect(amplitude(audition,440,0.6)>0.1);#expect(amplitude(audition,110,0.6)>0.1);#expect(amplitude(audition,expectedFrequency,0.6)<0.01)
+            pipeline.auditionAudio(assetID:nil,on:prepared.playerItem)
+            #expect(try await readAudio(prepared.playerItem.asset,mix:prepared.playerItem.audioMix,channels:2)==preview)
+        }
+        var rangeDocument=base
+        rangeDocument.sequence.multicamGroups[0]=try MulticamSwitching.replacingAudioCuts(in:base.sequence.multicamGroups[0],from:.init(value:1,timescale:4),to:.init(value:3,timescale:4),with:[.init(time:.init(value:1,timescale:4),angleID:b.id)])
+        let rangePackage=directory.appendingPathComponent("range.lifeedit");try ProjectPackage.write(rangeDocument,to:rangePackage)
+        let rangeSnapshot=ProjectSnapshot(document:try ProjectPackage.read(from:rangePackage))
+        let rangePlayback=try await pipeline.prepare(rangeSnapshot)
+        let rangeSamples=try await readAudio(rangePlayback.playerItem.asset,mix:rangePlayback.playerItem.audioMix,channels:2)
+        #expect(amplitude(rangeSamples,220,0.02)>0.1)
+        #expect(amplitude(rangeSamples,880,0.3)>0.1)
+        #expect(amplitude(rangeSamples,220,0.78)>0.1)
+        let rangeOutput=directory.appendingPathComponent("range.wav")
+        try await pipeline.export(rangeSnapshot,to:rangeOutput,options:.init(format:.wav))
+        let rangeExport=try await readAudio(AVURLAsset(url:rangeOutput),channels:2)
+        #expect(rangeExport.count==rangeSamples.count)
+        #expect(zip(rangeExport,rangeSamples).allSatisfy {abs($0-$1)<=1.0/32768.0})
+    }
+
     private func makeVideo(_ url: URL, color: CIColor, width: Int = 64, height: Int = 64, frames: Int = 30, changesHalfway: Bool = false) async throws {
         // Optional developer fixture helper only; no FFmpeg dependency is linked or shipped.
         // Raw frames avoid relying on an encoder merely to exercise the decoder/compositor.
@@ -682,13 +767,14 @@ import LifeCore
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return bytes
     }
-    private func readAudio(_ asset: AVAsset) async throws -> [Float] {
+    private func readAudio(_ asset: AVAsset, mix:AVAudioMix? = nil,channels:Int = 1) async throws -> [Float] {
         let reader = try AVAssetReader(asset: asset)
-        let track = try await asset.loadTracks(withMediaType: .audio).first!
-        let output = AVAssetReaderAudioMixOutput(audioTracks: [track], audioSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1,
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: channels,
             AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
             AVLinearPCMIsBigEndianKey: false, AVLinearPCMIsNonInterleaved: false])
+        output.audioMix=mix
         reader.add(output); try #require(reader.startReading())
         var samples: [Float] = []
         while let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
@@ -697,7 +783,7 @@ import LifeCore
             let count = CMBlockBufferGetDataLength(block) / MemoryLayout<Float>.size
             var chunk = [Float](repeating: 0, count: count)
             _ = chunk.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: count * 4, destination: $0.baseAddress!) }
-            samples += chunk
+            if channels == 2 {samples += stride(from:0,to:chunk.count,by:2).map {chunk[$0]}} else {samples += chunk}
         }
         #expect(reader.status == .completed)
         return samples

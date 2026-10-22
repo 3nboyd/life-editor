@@ -1,5 +1,13 @@
 name: Source checks
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      native_media:
+        description: Run native media integration (requires supported VideoToolbox hardware)
+        type: boolean
+        default: false
 concurrency:
   group: source-${{ github.ref }}
   cancel-in-progress: true
@@ -12,13 +20,18 @@ jobs:
       - name: Use the selected Xcode toolchain
         run: echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
       - run: swift --version
-      - name: Native tests
+      - name: Tests
         timeout-minutes: 10
-        run: scripts/test.sh
+        run: scripts/test.sh 2>&1 | tee test-results.log
         env:
-          LIFE_RUN_MEDIA_INTEGRATION: "1"
+          LIFE_RUN_MEDIA_INTEGRATION: ${{ inputs.native_media && '1' || '0' }}
+          LIFE_UI_ARTIFACTS: ${{ github.workspace }}/.build/ui-artifacts
       - run: scripts/build-app.sh
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: LifeEditor-source-build
-          path: dist/
+          path: |
+            dist/
+            test-results.log
+            .build/ui-artifacts/

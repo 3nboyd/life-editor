@@ -28,8 +28,8 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
 
-- Complete manual/timecode/waveform-sync workflow, drift correction preview,
-  selected-range re-recording, video/audio switching modes and editable cut UI.
+- Complete timecode synchronization, drift correction preview and richer direct
+  cut refinement.
 - Insert/overwrite, contextual roll/slip/ripple trims, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse/freeze and speed ramps.
@@ -54,3 +54,10 @@ uses six decimals; four live angles per page; missing effects/fonts persist but
 need visible missing-resource UX. Peaks are sample peaks, not true peaks. Limiter
 is per clip; summed tracks may still clip. No Developer ID/notary identity is
 available, so development builds remain ad-hoc signed.
+
+
+Latest integrated additions: native-rate multiresolution per-channel waveforms,
+exact visible sample windows, separate video/audio/both switching with live audition,
+range replacement in either decision lane, stable cut IDs and numeric cut refinement.
+Forward/backward NTSC stepping now preserves an exact rational transport clock.
+Local full native/helper verification:118 tests pass; optimized ad-hoc app build passes.

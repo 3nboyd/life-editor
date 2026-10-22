@@ -68,13 +68,24 @@ public struct Marker: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID; public var time: RationalTime; public var duration: RationalTime; public var name: String; public var note: String; public var clipID: UUID?; public var color: RGBAColor?
     public init(id: UUID = UUID(), time: RationalTime, duration: RationalTime = .zero, name: String = "", note: String = "", clipID: UUID? = nil, color: RGBAColor? = nil) { self.id=id; self.time=time; self.duration=duration; self.name=name; self.note=note; self.clipID=clipID; self.color=color }
 }
-public struct MulticamCut: Codable, Equatable, Sendable {
-    public var time: RationalTime; public var angleID: UUID
-    public init(time: RationalTime, angleID: UUID) { self.time=time; self.angleID=angleID }
+public struct MulticamCut: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID; public var time: RationalTime; public var angleID: UUID
+    public init(id: UUID = UUID(), time: RationalTime, angleID: UUID) { self.id=id; self.time=time; self.angleID=angleID }
+    private enum CodingKeys:String,CodingKey { case id,time,angleID }
+    public init(from decoder:any Decoder) throws {
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        time=try c.decode(RationalTime.self,forKey:.time);angleID=try c.decode(UUID.self,forKey:.angleID)
+        // Stable across repeated legacy reads, without introducing platform APIs.
+        let text="\(angleID.uuidString)|\(time.value)/\(time.timescale)"
+        var bytes=[UInt8](repeating:0,count:16)
+        for lane in 0..<2 { var hash:UInt64=14695981039346656037 ^ UInt64(lane);for byte in text.utf8 {hash=(hash ^ UInt64(byte)) &* 1099511628211};for n in 0..<8 {bytes[lane*8+n]=UInt8(truncatingIfNeeded:hash >> (n*8))} }
+        bytes[6]=(bytes[6]&15)|80;bytes[8]=(bytes[8]&63)|128
+        id=try c.decodeIfPresent(UUID.self,forKey:.id) ?? UUID(uuid:(bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]))
+    }
 }
 public struct MulticamGroup: Identifiable, Codable, Equatable, Sendable {
-    public var id: UUID; public var angleAssetIDs: [UUID]; public var masterAudioAssetID: UUID?; public var cuts: [MulticamCut]; public var audioAssetIDs:[UUID]?
-    public init(id: UUID = UUID(), angleAssetIDs: [UUID], masterAudioAssetID: UUID? = nil, cuts: [MulticamCut] = [], audioAssetIDs:[UUID]? = nil) { self.id=id; self.angleAssetIDs=angleAssetIDs; self.masterAudioAssetID=masterAudioAssetID; self.cuts=cuts; self.audioAssetIDs=audioAssetIDs }
+    public var id: UUID; public var angleAssetIDs: [UUID]; public var masterAudioAssetID: UUID?; public var cuts: [MulticamCut]; public var audioAssetIDs:[UUID]?; public var audioCuts:[MulticamCut]?
+    public init(id: UUID = UUID(), angleAssetIDs: [UUID], masterAudioAssetID: UUID? = nil, cuts: [MulticamCut] = [], audioAssetIDs:[UUID]? = nil, audioCuts:[MulticamCut]? = nil) { self.id=id; self.angleAssetIDs=angleAssetIDs; self.masterAudioAssetID=masterAudioAssetID; self.cuts=cuts; self.audioAssetIDs=audioAssetIDs; self.audioCuts=audioCuts }
 }
 public struct ProjectSettings: Codable, Equatable, Sendable {
     public var width: Int; public var height: Int; public var frameRate: FrameRate; public var audioSampleRate: Int
@@ -175,7 +186,11 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             guard validTime(transition.duration), transition.duration > .zero, transition.color.isValid, (0...3).contains(transition.direction) else { throw DocumentError.invalidTiming }
         }
         for group in sequence.multicamGroups {
-            for cut in group.cuts { guard validTime(cut.time) else { throw DocumentError.invalidTiming } }
+            for cuts in [group.cuts, group.audioCuts ?? []] {
+                guard Set(cuts.map(\.id)).count == cuts.count, Set(cuts.map(\.time)).count == cuts.count else {throw DocumentError.duplicateID}
+                for cut in cuts { guard validTime(cut.time) else { throw DocumentError.invalidTiming } }
+            }
+            guard group.cuts.allSatisfy({group.angleAssetIDs.contains($0.angleID)}), (group.audioCuts ?? []).allSatisfy({group.angleAssetIDs.contains($0.angleID) || $0.angleID == group.masterAudioAssetID || $0.angleID == MulticamSwitching.silenceAudioID}) else {throw DocumentError.invalidTiming}
         }
     }
 }

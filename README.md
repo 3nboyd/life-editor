@@ -38,7 +38,8 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 - Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
 - Gain/pan/channel mapping/EQ, optional limiter and calibrated loudness measurement.
 - Multicam groups, four proxy previews, waveform alignment candidates and manual offsets.
-- Continuous master audio, armed camera cuts, range pass replacement and audition.
+- Continuous master audio by default; video/audio/both cuts, range replacement and audition.
+- Cached per-channel waveforms with exact source-rate sample detail when zoomed in.
 - SRT import/export and timed captions; portable collected packages and recovery.
 - Debounced autosave, recent projects, duplicate and confirmed revert.
 - H.264/HEVC/ProRes/WAV/AIFF/M4A export, ranges, progress and cancellation.

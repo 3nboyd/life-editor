@@ -73,10 +73,23 @@ public struct FrameRate: Codable, Hashable, Sendable {
     public var frameDuration: RationalTime { RationalTime(value: denominator, timescale: numerator) }
     public func time(forFrame frame: Int64) -> RationalTime { frameDuration.scaled(by: frame) }
     public func quantized(_ time: RationalTime) -> RationalTime {
-        let position = time.scaled(by: numerator, over: denominator)
-        let whole = position.value / position.timescale
-        let remainder = position.value % position.timescale
-        let roundsUp = remainder.magnitude >= UInt64(position.timescale / 2 + position.timescale % 2)
-        return self.time(forFrame: whole + (roundsUp ? (position.value < 0 ? -1 : 1) : 0))
+        // Valid editor times are representable; callers handling arbitrary input
+        // can use the throwing variant instead of trapping on an invalid result.
+        try! checkedQuantized(time)
+    }
+    public func checkedQuantized(_ time:RationalTime)throws->RationalTime {
+        guard numerator>0,denominator>0 else{throw DocumentError.invalidTiming}
+        let divisor=UInt64(time.timescale).multipliedReportingOverflow(by:UInt64(denominator))
+        guard !divisor.overflow,divisor.partialValue>0 else{throw DocumentError.invalidTiming}
+        let product=time.value.magnitude.multipliedFullWidth(by:UInt64(numerator))
+        guard product.high<divisor.partialValue else{throw DocumentError.invalidTiming}
+        let division=divisor.partialValue.dividingFullWidth(product)
+        let rounds=division.remainder>=divisor.partialValue/2+divisor.partialValue%2
+        let rounded=division.quotient.addingReportingOverflow(rounds ? 1:0)
+        let limit=UInt64(Int64.max)+(time.value<0 ? 1:0)
+        guard !rounded.overflow,rounded.partialValue<=limit else{throw DocumentError.invalidTiming}
+        let frame:Int64
+        if time.value<0{frame=rounded.partialValue==UInt64(Int64.max)+1 ? Int64.min:-Int64(rounded.partialValue)}else{frame=Int64(rounded.partialValue)}
+        return try frameDuration.checkedScaled(by:frame)
     }
 }

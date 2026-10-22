@@ -123,7 +123,9 @@ import LifeCore
     let store=EditorStore();store.openProject(url);store.selection=clip.id
     store.editSelected{$0.title?.text="Second"}
     store.editSelected{$0.title?.text="Latest"}
-    try await Task.sleep(for:.milliseconds(2300))
+    let clock=ContinuousClock();let saveDeadline=clock.now.advanced(by:.seconds(15))
+    while store.dirty && clock.now<saveDeadline{try await Task.sleep(for:.milliseconds(50))}
+    try #require(!store.dirty,"Autosave did not complete before its bounded deadline")
     #expect(try ProjectPackage.read(from:url)==store.document)
     #expect(store.selectedClip?.title?.text=="Latest")
     #expect(!store.dirty)
@@ -133,10 +135,11 @@ import LifeCore
     let projectURL=url.appendingPathComponent(ProjectPackage.projectFilename)
     try newer.write(to:projectURL,options:.atomic)
     store.editSelected{$0.title?.text="Must not overwrite"}
-    try await Task.sleep(for:.milliseconds(2300))
+    let refusalDeadline=clock.now.advanced(by:.seconds(15))
+    while store.autosaveError==nil && clock.now<refusalDeadline{try await Task.sleep(for:.milliseconds(50))}
     #expect(try Data(contentsOf:projectURL)==newer)
     #expect(store.dirty)
-    #expect(store.error?.contains("unsupported") == true)
+    #expect(store.autosaveError?.contains("unsupported") == true)
 }
 
 @MainActor @Test func markerAnchoringRejectsUnrepresentableIntermediateWithoutCrashing() throws {
@@ -151,4 +154,14 @@ import LifeCore
     store.anchorMarker(marker.id,toSelected:true)
     #expect(store.document==before)
     #expect(store.error != nil)
+}
+
+@MainActor @Test func frameSteppingRetainsExactNTSCClockAcrossLongSequences() {
+    let store=EditorStore(),rate=FrameRate(numerator:30000,denominator:1001)
+    store.document.sequence.settings.frameRate=rate
+    store.document.sequence.tracks=[Track(name:"Long title",kind:.title,clips:[Clip(duration:.init(value:3600,timescale:1),title:.init(text:"Clock"))])]
+    for _ in 0..<3000{store.step(1)}
+    #expect(store.playheadTime==rate.time(forFrame:3000))
+    for _ in 0..<3000{store.step(-1)}
+    #expect(store.playheadTime == .zero)
 }

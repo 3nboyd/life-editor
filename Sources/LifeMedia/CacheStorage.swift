@@ -15,22 +15,25 @@ public struct CacheStorage: Sendable {
     init(root: URL) { rootOverride = root }
     private var ownedDirectories: [URL] {
         guard let rootOverride else { return Self.directories }
-        return ["org.lifeeditor.proxy", "org.lifeeditor.retime", "org.lifeeditor.canvas", "org.lifeeditor.audio"].map { rootOverride.appendingPathComponent($0, isDirectory: true) }
+        return ["org.lifeeditor.proxy", "org.lifeeditor.retime", "org.lifeeditor.canvas", "org.lifeeditor.audio", "org.lifeeditor.waveforms"].map { rootOverride.appendingPathComponent($0, isDirectory: true) }
     }
     static var directories: [URL] {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return ["org.lifeeditor.proxy", "org.lifeeditor.retime", "org.lifeeditor.canvas", "org.lifeeditor.audio"].map { root.appendingPathComponent($0, isDirectory: true) }
+        return ["org.lifeeditor.proxy", "org.lifeeditor.retime", "org.lifeeditor.canvas", "org.lifeeditor.audio", "org.lifeeditor.waveforms"].map { root.appendingPathComponent($0, isDirectory: true) }
     }
     private func files() throws -> [(URL, Int64, Date)] {
         var result: [(URL, Int64, Date)] = []
         for directory in ownedDirectories {
             guard FileManager.default.fileExists(atPath: directory.path) else { continue }
+            let directoryValues=try directory.resourceValues(forKeys:[.isDirectoryKey,.isSymbolicLinkKey])
+            guard directoryValues.isDirectory == true,directoryValues.isSymbolicLink != true else { continue }
             for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey], options: [.skipsHiddenFiles]) {
                 let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey])
                 guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
                 // Only versioned, hashed media artifacts are disposable; never
                 // recursively traverse directories or follow links into user files.
-                guard ["mp4", "mov", "wav"].contains(url.pathExtension) else { continue }
+                let waveform=directory.lastPathComponent == "org.lifeeditor.waveforms"
+                guard waveform ? url.pathExtension == "waveform":["mp4", "mov", "wav"].contains(url.pathExtension) else { continue }
                 let stem = url.deletingPathExtension().lastPathComponent
                 let isHash = stem.count == 64 && stem.allSatisfy { $0.isHexDigit }
                 guard isHash || url.lastPathComponent == "black-v1.mov" else { continue }

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import LifeCore
+import LifeAnalysis
 
 struct TimelineSurface: NSViewRepresentable {
     @ObservedObject var store: EditorStore
@@ -31,8 +32,12 @@ struct TimelineSurface: NSViewRepresentable {
     var snapLabel: String?
     var transitionResize:(id:UUID,origin:Double,duration:Double,maximum:Double,sign:Double)?
     var dropGuide:Double?
-    var waveforms: [UUID:[Float]] = [:]
+    var waveforms: [UUID:WaveformOverview] = [:]
     var requested: [UUID:URL] = [:]
+    private var waveformTasks:[UUID:Task<Void,Never>]=[:]
+    private var waveformPoll:[UUID:Date]=[:]
+    private var sampleWindows:[String:WaveformSampleWindow]=[:]
+    private var sampleTasks:[String:Task<Void,Never>]=[:]
     private var accessibilityItems:[NSAccessibilityElement]=[]
     private struct AccessibilitySignature: Equatable {
         var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double
@@ -83,23 +88,83 @@ struct TimelineSurface: NSViewRepresentable {
         accessibilityItems=elements;setAccessibilityChildren(elements)
     }
     override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); observeGeometry() }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); observeGeometry(); refreshAccessibility() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow();observeGeometry();refreshAccessibility()
+        if window == nil {for task in waveformTasks.values{task.cancel()};for task in sampleTasks.values{task.cancel()};waveformTasks.removeAll();sampleTasks.removeAll()}
+    }
     private func observeGeometry() {
         let center=NotificationCenter.default
         for name in [NSView.boundsDidChangeNotification,NSWindow.didMoveNotification,NSWindow.didResizeNotification] { center.removeObserver(self,name:name,object:nil) }
         if let clip=enclosingScrollView?.contentView { clip.postsBoundsChangedNotifications=true; center.addObserver(self,selector:#selector(geometryChanged),name:NSView.boundsDidChangeNotification,object:clip) }
         if let window { for name in [NSWindow.didMoveNotification,NSWindow.didResizeNotification] { center.addObserver(self,selector:#selector(geometryChanged),name:name,object:window) } }
     }
-    @objc private func geometryChanged(_ notification:Notification) { refreshAccessibility(); needsDisplay=true }
+    @objc private func geometryChanged(_ notification:Notification) { refreshAccessibility();loadWaveforms();needsDisplay=true }
 
     func loadWaveforms() {
-        for asset in store.document.assets where requested[asset.id] != (asset.preparedURL ?? asset.url) {
-            let decodeURL=asset.preparedURL ?? asset.url
-            requested[asset.id]=decodeURL
-            Task { [weak self] in
-                let peaks=await WaveformCache.shared.peaks(for:decodeURL)
-                guard let self,self.requested[asset.id]==decodeURL else{return}
-                self.waveforms[asset.id]=peaks;self.needsDisplay=true
+        let visibleIDs=Set(tracks.enumerated().flatMap { row,track in track.clips.filter { rect($0,row:row).intersects(visibleRect) }.compactMap(\.assetID) })
+        let assets=store.document.assets.filter { $0.kind != .image && visibleIDs.contains($0.id) }
+        let active=Set(assets.map(\.id))
+        for id in Array(waveformTasks.keys) where !active.contains(id) { waveformTasks.removeValue(forKey:id)?.cancel() }
+        waveforms=waveforms.filter { active.contains($0.key) };requested=requested.filter { active.contains($0.key) }
+        for asset in assets {
+            let url=asset.preparedURL ?? asset.url
+            if requested[asset.id] != url {
+                waveformTasks.removeValue(forKey:asset.id)?.cancel();waveforms.removeValue(forKey:asset.id);waveformPoll.removeValue(forKey:asset.id);requested[asset.id]=url
+            }
+            guard waveformTasks[asset.id] == nil,Date().timeIntervalSince(waveformPoll[asset.id] ?? .distantPast)>=2 else{continue}
+            guard waveforms[asset.id] != nil || waveforms.values.reduce(0,{$0+$1.pyramid.memoryBytes})<128_000_000 else{continue}
+            guard waveformTasks.count<2 else{continue}
+            waveformPoll[asset.id]=Date()
+            waveformTasks[asset.id]=Task { [weak self] in
+                do {
+                    let overview=try await WaveformCache.shared.overview(for:url)
+                    guard !Task.isCancelled,let self,self.requested[asset.id]==url else{return}
+                    self.waveformTasks[asset.id]=nil
+                    if self.waveforms[asset.id]?.sourceKey != overview.sourceKey { self.waveforms[asset.id]=overview;self.needsDisplay=true }
+                    self.loadWaveforms()
+                } catch {
+                    guard !Task.isCancelled,let self,self.requested[asset.id]==url else{return};self.waveformTasks[asset.id]=nil
+                }
+            }
+        }
+        loadSampleWindows()
+    }
+    private func sampleKey(_ assetID:UUID,_ source:String,_ chunk:Int64)->String { assetID.uuidString+"|"+source+"|\(chunk)" }
+    private func loadSampleWindows() {
+        var requests:[(String,UUID,URL,String,Double,Double)]=[],seen=Set<String>(),bytes=0
+        for (row,track) in tracks.enumerated() {
+            for clip in track.clips where rect(clip,row:row).intersects(visibleRect) {
+                guard let id=clip.assetID,let overview=waveforms[id],let url=requested[id] else{continue}
+                let rate=overview.pyramid.sampleRate
+                guard rate*clip.speed/store.pixelsPerSecond<=64 else{continue}
+                let lower=max(clip.start.seconds,(visibleRect.minX-header)/store.pixelsPerSecond),upper=min(clip.end.seconds,(visibleRect.maxX-header)/store.pixelsPerSecond)
+                guard upper>lower else{continue}
+                let first=max(0,Int64(floor((clip.sourceStart.seconds+(lower-clip.start.seconds)*clip.speed)*rate)))
+                let last=min(overview.pyramid.sampleCount,Int64(ceil((clip.sourceStart.seconds+(upper-clip.start.seconds)*clip.speed)*rate)))
+                guard last>first else{continue}
+                let firstChunk=first/65536,lastChunk=(last-1)/65536
+                guard lastChunk-firstChunk<64 else{continue}
+                for chunk in firstChunk...lastChunk {
+                    let key=sampleKey(id,overview.sourceKey,chunk),end=min(overview.pyramid.sampleCount,(chunk+1)*65536)
+                    let size=Int(end-chunk*65536)*overview.pyramid.channelCount*4
+                    guard seen.insert(key).inserted,bytes+size<=24_000_000 else{continue}
+                    bytes+=size;requests.append((key,id,url,overview.sourceKey,Double(chunk*65536)/rate,Double(end)/rate))
+                }
+            }
+        }
+        let needed=Set(requests.map{$0.0})
+        for key in Array(sampleTasks.keys) where !needed.contains(key) { sampleTasks.removeValue(forKey:key)?.cancel() }
+        sampleWindows=sampleWindows.filter { needed.contains($0.key) }
+        for (key,id,url,source,lower,upper) in requests where sampleWindows[key] == nil && sampleTasks[key] == nil {
+            guard sampleTasks.count<2 else{break}
+            sampleTasks[key]=Task { [weak self] in
+                do {
+                    let window=try await WaveformCache.shared.samples(for:url,from:lower,to:upper)
+                    guard !Task.isCancelled,let self,self.requested[id]==url,self.waveforms[id]?.sourceKey==source,window.sourceKey==source else{return}
+                    self.sampleTasks[key]=nil;self.sampleWindows[key]=window;self.needsDisplay=true;self.loadSampleWindows()
+                } catch {
+                    guard !Task.isCancelled,let self else{return};self.sampleTasks[key]=nil
+                }
             }
         }
     }
@@ -169,15 +234,8 @@ struct TimelineSurface: NSViewRepresentable {
                 if selected { NSColor.white.withAlphaComponent(0.8).setStroke();let outline=NSBezierPath(roundedRect:box.insetBy(dx:1,dy:1),xRadius:4,yRadius:4);outline.lineWidth=1.5;outline.stroke() }
                 NSGraphicsContext.saveGraphicsState();NSBezierPath(rect:box.insetBy(dx:4,dy:2)).addClip()
                 text(clip.name,NSPoint(x:box.minX+8,y:box.minY+6),color:.white)
-                if let assetID=clip.assetID,let peaks=waveforms[assetID],!peaks.isEmpty,let asset=store.document.assets.first(where:{$0.id == assetID}) {
-                    let waveform=NSBezierPath()
-                    for pixel in stride(from:startPixel,through:endPixel,by:2) {
-                        let source=clip.sourceStart.seconds + pixel/pps*clip.speed
-                        let index=min(peaks.count-1,max(0,Int(source/max(0.001,asset.duration.seconds)*Double(peaks.count))))
-                        let height=Double(min(1,peaks[index]))*14
-                        waveform.move(to:NSPoint(x:box.minX+pixel,y:box.midY-height+7));waveform.line(to:NSPoint(x:box.minX+pixel,y:box.midY+height+7))
-                    }
-                    NSColor.white.withAlphaComponent(0.22).setStroke();waveform.stroke()
+                if let assetID=clip.assetID,let overview=waveforms[assetID] {
+                    drawWaveform(overview,assetID:assetID,clip:clip,box:box,from:startPixel,to:endPixel)
                 }
 
                 let automationLane=displayedAutomationLane(for:clip,track:track)
@@ -212,7 +270,7 @@ struct TimelineSurface: NSViewRepresentable {
             text(track.isLocked ? "● Locked" : (track.kind == .audio ? "Audio" : "Video"),NSPoint(x:visible.minX+12,y:top+30),size:10)
             for (i,symbol) in [track.isMuted ? "speaker.slash.fill" : "speaker.wave.2",track.isHidden ? "eye.slash" : "eye",track.isLocked ? "lock.fill" : "lock.open"].enumerated() {
                 let r=NSRect(x:visible.minX+12+Double(i)*36,y:top+47,width:24,height:20)
-                NSImage(systemSymbolName:symbol,accessibilityDescription:nil)?.draw(in:r)
+                NSImage(systemSymbolName:symbol,accessibilityDescription:nil)?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors:[NSColor(calibratedWhite:0.75,alpha:1)]))?.draw(in:r)
             }
         }
         NSColor(white:0.1,alpha:1).setFill();NSRect(x:visible.minX,y:0,width:header,height:ruler).fill()
@@ -357,6 +415,60 @@ struct TimelineSurface: NSViewRepresentable {
         case .right:if abs(drag.target-drag.clip.end.seconds)>0.000001 {store.apply(.trim(clipID:drag.clip.id,start:drag.clip.start,end:store.time(drag.target,audio:audio)))}
         case .fadeIn,.fadeOut:break // Fade handles use the shared automation gesture above.
         }
+    }
+    private func drawWaveform(_ overview:WaveformOverview,assetID:UUID,clip:Clip,box:NSRect,from lower:Double,to upper:Double) {
+        let pyramid=overview.pyramid,rate=pyramid.sampleRate,samplesPerPixel=rate*clip.speed/store.pixelsPerSecond
+        guard let level=pyramid.level(samplesPerPixel:samplesPerPixel),lower<=upper else{return}
+        let channelHeight=30/Double(max(1,pyramid.channelCount)),top=box.minY+27
+        for channel in 0..<pyramid.channelCount {
+            let center=top+(Double(channel)+0.5)*channelHeight,amplitude=max(1,channelHeight/2-1)
+            let path=NSBezierPath()
+            if samplesPerPixel<=1 {
+                var began=false
+                let first=max(0,Int64(floor((clip.sourceStart.seconds+lower/store.pixelsPerSecond*clip.speed)*rate)))
+                let last=min(pyramid.sampleCount-1,Int64(ceil((clip.sourceStart.seconds+upper/store.pixelsPerSecond*clip.speed)*rate)))
+                if last>=first,last-first<10000 {
+                    for index in first...last {
+                        let key=sampleKey(assetID,overview.sourceKey,index/65536)
+                        guard let window=sampleWindows[key],window.channels.indices.contains(channel) else{began=false;continue}
+                        let offset=Int(index-window.firstSample);guard window.channels[channel].indices.contains(offset) else{began=false;continue}
+                        let xx=box.minX+(Double(index)/rate-clip.sourceStart.seconds)/clip.speed*store.pixelsPerSecond,y=center-Double(min(1,max(-1,window.channels[channel][offset])))*amplitude
+                        if began{path.line(to:NSPoint(x:xx,y:y))}else{path.move(to:NSPoint(x:xx,y:y));began=true}
+                        if samplesPerPixel<0.2 {NSColor.white.withAlphaComponent(0.45).setFill();NSBezierPath(ovalIn:NSRect(x:xx-1.5,y:y-1.5,width:3,height:3)).fill()}
+                    }
+                }
+            } else {
+                for pixel in stride(from:lower,through:upper,by:1) {
+                    let index=max(0,Int64(floor((clip.sourceStart.seconds+pixel/store.pixelsPerSecond*clip.speed)*rate)))
+                    let end=min(pyramid.sampleCount,max(index+1,index+Int64(ceil(samplesPerPixel))))
+                    var low:Float=0,high:Float=0
+                    if let detailed=sampleBin(assetID:assetID,source:overview.sourceKey,channel:channel,from:index,to:end) {
+                        low=detailed.minimum;high=detailed.maximum
+                    } else {
+                        let bin=Int(index/level.samplesPerBin)
+                        if level.channels[channel].indices.contains(bin) {low=level.channels[channel][bin].minimum;high=level.channels[channel][bin].maximum}
+                    }
+                    let y1=center-Double(max(-1,min(1,high)))*amplitude,y2=center-Double(max(-1,min(1,low)))*amplitude
+                    path.move(to:NSPoint(x:box.minX+pixel,y:y1));path.line(to:NSPoint(x:box.minX+pixel,y:max(y1+0.5,y2)))
+                }
+            }
+            NSColor.white.withAlphaComponent(0.24).setStroke();path.lineWidth=0.75;path.stroke()
+            if pyramid.channelCount>1 && channelHeight>=10 {text(pyramid.channelCount == 2 ? (channel == 0 ? "L":"R") : "\(channel+1)",NSPoint(x:box.minX+5,y:center-5),color:.white.withAlphaComponent(0.5),size:8)}
+        }
+    }
+    private func sampleBin(assetID:UUID,source:String,channel:Int,from first:Int64,to last:Int64)->WaveformBin? {
+        guard last>first,last-first<=128 else{return nil}
+        var cursor=first,low=Float.infinity,high = -Float.infinity
+        while cursor<last {
+            let key=sampleKey(assetID,source,cursor/65536)
+            guard let window=sampleWindows[key],window.channels.indices.contains(channel),cursor>=window.firstSample,cursor<window.lastSample else{return nil}
+            let end=min(last,window.lastSample)
+            for index in Int(cursor-window.firstSample)..<Int(end-window.firstSample) {
+                let value=window.channels[channel][index];guard value.isFinite else{continue};low=min(low,value);high=max(high,value)
+            }
+            cursor=end
+        }
+        return low.isFinite && high.isFinite ? WaveformBin(minimum:low,maximum:high):nil
     }
     private func displayedAutomationLane(for clip:Clip,track:Track)->AutomationLane {
         if store.selection == clip.id { return store.automationLane }

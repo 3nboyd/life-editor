@@ -69,6 +69,7 @@ struct WorkspaceView: View {
             Spacer()
             Text(store.document.name + (store.dirty ? " •" : "")).font(.system(size:12,weight:.medium)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
+            if let failure=store.autosaveError{icon("externaldrive.badge.exclamationmark","Autosave failed"){store.error=failure}}
             if store.busy {ProgressView(value:store.importProgress).frame(width:50).accessibilityLabel("Preparing media");icon("xmark","Cancel import"){store.cancelImport()}}
             if store.exporting {
                 ProgressView().controlSize(.small).accessibilityLabel("Exporting")
@@ -158,7 +159,7 @@ struct WorkspaceView: View {
                 Picker("Audio tools",selection:$audioPage){Text("Mix").tag(0);Text("Beats").tag(1)}.pickerStyle(.segmented)
                 ScrollView{if audioPage==0{AudioControls(store:store)}else{VStack(spacing:16){audioInspector;MusicalGridControls(store:store)}}}
             }
-            else if store.panel == .multicam {multicamInspector}
+            else if store.panel == .multicam {ScrollView{multicamInspector;MulticamCutControls(store:store)}}
             else if store.panel == .drawing {DrawingControls(store:store)}
             else if store.panel == .markers {MarkerControls(store:store)}
             else if let clip = store.selectedClip {
@@ -208,6 +209,7 @@ struct WorkspaceView: View {
     private var multicamInspector:some View {
         VStack(alignment:.leading,spacing:14){
             if let group=store.multicamGroup {
+                Picker("Switch",selection:$store.switchMode){Text("Video").tag(MulticamSwitchMode.video);Text("Audio").tag(MulticamSwitchMode.audio);Text("Both").tag(MulticamSwitchMode.both)}.pickerStyle(.segmented).disabled(store.playing || store.checkingCameraAudio)
                 Toggle("Replace range",isOn:$store.replaceSwitchRange).disabled(store.playing)
                 if store.replaceSwitchRange{
                     HStack{
@@ -232,8 +234,8 @@ struct WorkspaceView: View {
                 if !store.syncCandidates.isEmpty {
                     HStack{Button("Preview"){store.previewSynchronization()};Button("Apply"){store.applySynchronization()};Button("Cancel"){store.syncCandidates=[];store.cancelSynchronization()}}
                 }
-                Picker("Master",selection:Binding(get:{group.masterAudioAssetID},set:{id in var next=store.document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].masterAudioAssetID=id;store.replace(next)})){
-                    ForEach(store.document.assets.filter{$0.kind != .image}){asset in Text(asset.url.lastPathComponent).tag(Optional(asset.id))}
+                Picker("Master",selection:Binding(get:{group.masterAudioAssetID},set:{id in var next=store.document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].masterAudioAssetID=id;if let id{var associated=next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].audioAssetIDs ?? [];if !associated.contains(id){associated.append(id)};next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].audioAssetIDs=associated};store.replace(next)})){
+                    ForEach(store.document.assets.filter{store.cameraAudioIDs.contains($0.id)}){asset in Text(asset.url.lastPathComponent).tag(Optional(asset.id))}
                 }
                 HStack{Button {store.cameraPage=max(0,store.cameraPage-1)}label:{Image(systemName:"chevron.left")}.disabled(store.cameraPage==0).help("Previous angles").accessibilityLabel("Previous angles")
                     Spacer();Text("\(store.cameraPage+1)").monospacedDigit();Spacer()
