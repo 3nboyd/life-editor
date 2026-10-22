@@ -73,7 +73,7 @@ LIFE_RUN_MEDIA_INTEGRATION=1 scripts/test.sh
 
 Native tests generate synthetic media and check decoded preview/export frames,
 retiming sample count/pitch/fades, camera cuts, creative effects, actual codecs,
-selected ranges and cancellation safety. The UI render check exercises1280×800;
+selected ranges and cancellation safety. The UI render check exercises 1280 × 800;
 it does not substitute for hands-on usability or accessibility testing.
 
 ## Shortcuts

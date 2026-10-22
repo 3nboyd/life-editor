@@ -7,7 +7,7 @@ are built from pinned verified LGPL source; see FFMPEG.md. Swift/SwiftUI,
 AppKit, AVFoundation, Core Media, Core Image, Core Text, Accelerate and Metal are
 Apple platform/toolchain components under their respective platform licenses.
 
-FFmpeg/ffprobe9.0.2 may be bundled from .local-helpers with matching source,
+FFmpeg/ffprobe 9.0.2 may be bundled from .local-helpers with matching source,
 configuration, licenses and generated inventory. The build excludes GPL/nonfree
 components, disables autodetection/network, and links only platform libraries.
 The application never discovers arbitrary system FFmpeg from PATH.

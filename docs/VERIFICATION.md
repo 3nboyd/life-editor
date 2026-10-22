@@ -1,6 +1,6 @@
 # Verification: 2026-10-21
 
-Host: macOS15.6, Apple M4,16GB; Swift6.2.3 CLT compiler/SDK.
+Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
 After filesystem/host access was expanded, native media services worked. Earlier
@@ -8,36 +8,36 @@ sandbox VideoToolbox failures are historical and are no longer the current test
 boundary. Real native integration now verifies:
 
 - Two composited layers: decoded preview/export pixel agreement.
-- One-second pitch-preserving half-speed audio:48000 decoded samples, pitch near
- 440Hz, onset within10ms, fade progression.
+- One-second pitch-preserving half-speed audio: 48,000 decoded samples, pitch near
+ 440 Hz, onset within 10 ms, fade progression.
 - Title-only, still-image, audio-only and multicam camera-cut output.
-- All16 look and16 adjustment graphs produce actual thumbnails; deterministic VHS
+- All 16 look and 16 adjustment graphs produce actual thumbnails; deterministic VHS
  seed/frame; filtered export matches thumbnail; transforms and styled text render.
-- H.264, HEVC, ProRes, WAV, AIFF and M4A actual stream codecs;48k stereo; resized and
+- H.264, HEVC, ProRes, WAV, AIFF and M4A actual stream codecs; 48 kHz stereo; resized and
  selected-range output; monotonic progress; cancelled export preserves destination.
 - Rational timing, grouped undo, malformed data safety, collected transfer,
  checkpoint rotation, SRT and effect/style/transform persistence.
 - Tempo/sync synthetic arrays: known tempo/offset and silence handling.
 
-Latest combined native/helper run: **118 tests pass**, including1280×800 native
-hosting render, all14 transitions with unchanged project timing and decoded
+Latest combined native/helper run: **118 tests pass**, including 1280 × 800 native
+hosting render, all 14 transitions with unchanged project timing and decoded
 preview/export agreement, drawing/shape rendering, grouped selection commands,
 source markers/tempo anchors, conversion cancellation and source protection.
 Audio DSP tests verify gain/pan/channel mapping/three EQ bands, explicit limiter
 ceiling/no latency/sample count, positive automation headroom and preview/export
-samples within0.0001. Stereo integrated loudness agrees with pinned FFmpeg ebur128
-within0.15LU on a gated fixture. Sample peaks are not true-peak measurements.
+samples within 0.0001. Stereo integrated loudness agrees with pinned FFmpeg ebur128
+within 0.15 LU on a gated fixture. Sample peaks are not true-peak measurements.
 
-Four1280×720 muted proxy AVPlayers decoded25frames each in1.114s including startup,
-with7.25µs position spread on this M4 run. This synthetic foundation test does not
-establish full main-viewer30fps, M1 or long-timeline targets. CPU/RSS vary with
+Four 1280 × 720 muted proxy AVPlayers decoded 25 frames each in 1.114 s including startup,
+with 7.25 µs position spread on this M4 run. This synthetic foundation test does not
+establish full main-viewer 30 fps, M1 or long-timeline targets. CPU/RSS vary with
 parallel tests and media services run outside the app process.
 
 Native interactive automation remains unavailable (its Node runtime fails to
 initialize); pointer/VoiceOver/manual usability scenarios remain open. A screenshot
 alone does not close a phase gate.
 
-FFmpeg/ffprobe9.0.2 built from official signed source, with GPL/nonfree/autodetect/
+FFmpeg/ffprobe 9.0.2 built from official signed source, with GPL/nonfree/autodetect/
 network disabled and only file/pipe protocols. Build verification checks dynamic
 linkage, licenses/config and compiled inventory. WAV→AAC and PPM→ProRes fixtures
 pass; HTTPS is rejected. This is not full format-matrix coverage.
@@ -79,17 +79,17 @@ integration, including helpers, remains required locally on supported hardware
 before release. CI uploads logs and UI render artifacts even on failure.
 
 
-Native waveform fixtures now verify per-channel polarity, 44.1/48kHz source-rate
+Native waveform fixtures now verify per-channel polarity, 44.1/48 kHz source-rate
 retention, exact sample windows, pyramid aggregation/checksums, corruption rebuild,
 file-change invalidation, cancellation and symlink-safe cache cleanup. Limits are
-eight channels and262144 frames per detail window; timeline reads65536-frame
+eight channels and 262,144 frames per detail window; timeline reads 65,536-frame
 chunks with at most two overview and two detail jobs.
 
 Independent multicam audio/video/both decisions and stable legacy cut IDs pass
 persistence/undo tests. Known-tone native fixtures prove default continuous master,
 separate video/audio decisions, unchanged unrelated music, exact physical audio
 switch boundaries, live audition/restore and selected-range end restoration.
-Preview/export PCM agrees within one16-bitLSB. App command tests cover mode masks,
+Preview/export PCM agrees within one 16-bit LSB. App command tests cover mode masks,
 unavailable audio and one-action range undo. NTSC transport retains a rational
-clock;3000 forward/backward steps are exact, and full-width quantization handles
+clock; 3,000 forward/backward steps are exact, and full-width quantization handles
 valid long prime-denominator times without intermediate overflow.

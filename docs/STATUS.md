@@ -22,8 +22,8 @@ recent/saved swatches and viewer sampling. Six deterministic title entrances
 preserve animation clocks through trimming/splitting/retiming. Standard commands
 include recent/duplicate/revert and debounced autosave, with serialized recovery.
 
-Native integration verifies real frames and samples. Tests include exact1-second
-retimed audio at48k, pitch/onset/fades, rendered preset/transform/title output,
+Native integration verifies real frames and samples. Tests include exact 1-second
+retimed audio at 48 kHz, pitch/onset/fades, rendered preset/transform/title output,
 multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
@@ -44,12 +44,12 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 New integrated foundations include four synchronized proxy previews, waveform
 sync candidates with confidence/manual offsets, proxy/cache controls, pinned LGPL
-helper conversion, multi-selection/groups/clipboard, vector shapes/drawing, all14
+helper conversion, multi-selection/groups/clipboard, vector shapes/drawing, all 14
 transition graphs with source-handle-safe boundary objects, and shared audio DSP
 with gain/pan/channel mapping/EQ/optional limiter, sample meters and calibrated
 stereo BS.1770 integrated loudness. These do not close complete phase gates.
 
-Other limits: rational timing bounded to24h/representable values; constant speed
+Other limits: rational timing bounded to 24 h/representable values; constant speed
 uses six decimals; four live angles per page; missing effects/fonts persist but
 need visible missing-resource UX. Peaks are sample peaks, not true peaks. Limiter
 is per clip; summed tracks may still clip. No Developer ID/notary identity is
