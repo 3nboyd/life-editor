@@ -3,7 +3,7 @@
 Imports probe actual streams. Native AVFoundation decoding is preferred; bundled
 pinned FFmpeg/ffprobe 9.0.2 can prepare unsupported combinations as ProRes/PCM
 intermediates. Originals and required intermediates are retained separately from
-replaceable proxy caches. See FFMPEG.md for source, configuration and licenses.
+replaceable proxy caches. See [FFmpeg build details](FFMPEG.md) for source, configuration and licenses.
 Source-only builds work without helpers, with native decoding available.
 
 ## Verified fixtures

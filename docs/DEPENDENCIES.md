@@ -1,9 +1,9 @@
 # Dependency inventory
 
-Original project sources: MIT, see ../LICENSE.
+Original project sources: MIT, see [LICENSE](../LICENSE).
 
 No Swift package dependencies are downloaded. Optional bundled FFmpeg helpers
-are built from pinned verified LGPL source; see FFMPEG.md. Swift/SwiftUI,
+are built from pinned verified LGPL source; see [FFmpeg build details](FFMPEG.md). Swift/SwiftUI,
 AppKit, AVFoundation, Core Media, Core Image, Core Text, Accelerate and Metal are
 Apple platform/toolchain components under their respective platform licenses.
 
