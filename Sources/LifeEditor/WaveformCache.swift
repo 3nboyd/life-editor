@@ -62,8 +62,13 @@ actor WaveformCache {
         let pyramid=try builder.finish()
         guard try Self.sourceKey(for:url)==key else{throw WaveformCacheError.sourceChanged}
         let result=WaveformOverview(sourceKey:key,pyramid:pyramid)
-        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
-        try pyramid.encoded().write(to:destination,options:.atomic)
+        // Disk caches are disposable; a full or unavailable cache volume must not
+        // discard an already decoded waveform needed for ordinary editing.
+        let encoded=try pyramid.encoded()
+        do {
+            try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+            try encoded.write(to:destination,options:.atomic)
+        } catch { /* Keep the bounded memory cache usable until storage recovers. */ }
         try Task.checkCancellation();remember(result)
         return result
     }

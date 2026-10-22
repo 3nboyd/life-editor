@@ -57,3 +57,17 @@ private func waveformFile(_ url:URL,rate:Double=48000,channels:Int=2,amplitude:F
     await #expect(throws:WaveformCacheError.windowTooLarge){try await service.samples(for:source,from:0,to:8)}
     #expect(try Data(contentsOf:source) == bytes)
 }
+
+@Test func nativeWaveformsRemainUsableWhenDiskCacheCannotBeWritten() async throws {
+    let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+    defer{try? FileManager.default.removeItem(at:root)}
+    let source=root.appendingPathComponent("source.wav"),blocked=root.appendingPathComponent("blocked-cache")
+    try waveformFile(source)
+    let sentinel=Data("keep".utf8);try sentinel.write(to:blocked)
+    let service=WaveformCache(root:blocked),first=try await service.overview(for:source)
+    let second=try await service.overview(for:source)
+    #expect(first.pyramid.sampleCount==48000)
+    #expect(second.pyramid==first.pyramid)
+    #expect(try Data(contentsOf:blocked)==sentinel)
+}
