@@ -2,7 +2,7 @@
 
 A native, local Mac video editor in active development. Swift 6, macOS 15+,
 Apple Silicon. MIT licensed original code. No account, subscription, upload or
-watermark. **The complete 1.0 feature set is not finished.**
+watermark. Pre-1.0 development; see the [roadmap](docs/ROADMAP.md) for planned work.
 
 ## Build
 
