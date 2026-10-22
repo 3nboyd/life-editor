@@ -30,14 +30,14 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 - Layered video/audio/still import, playback, scrubbing and frame stepping.
 - Move/trim/split/duplicate/delete/ripple-delete with source/overlap protection.
 - Multi-selection, linked/group moves, clipboard and editable vector drawings/shapes.
-- Marker notes/ranges/colors and clip-source anchoring with trim/retime mapping.
+- Marker notes, ranges, and colors; markers can follow their original source frames when clips are trimmed or their speed changes.
 - Crop, position, scale, rotation, flips and non-exported safe-area guides.
 - Cached per-channel waveforms with exact source-rate sample detail when zoomed in.
-- Debounced autosave, recent projects, duplicate and confirmed revert.
+- Autosave after editing pauses, recent projects, project duplication, and confirmation before reverting.
 
 ### Titles and effects
 
-- Fourteen source-handle-safe transitions with timeline duration handles.
+- Fourteen transitions that stay within the available footage, with duration handles on the timeline.
 - Direct volume/opacity points, shared fades, curves, constant speed and pitch lock.
 - Editable multiline titles, six entrances, colors/backgrounds/outlines and viewer handles.
 - Shared color wheel, RGB/HEX, swatches and viewer sampling.
@@ -47,8 +47,8 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 
 - Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
 - Gain/pan/channel mapping/EQ, optional limiter and calibrated loudness measurement.
-- Multicam groups, four proxy previews, waveform alignment candidates and manual offsets.
-- Continuous master audio by default; video/audio/both cuts, range replacement and audition.
+- Multicam groups with four lightweight camera previews, suggested audio-waveform alignment, and manual timing offsets.
+- Continuous master audio by default; switch video, audio, or both, replace cuts within a selected range, and preview camera choices.
 
 ### Export and project recovery
 
