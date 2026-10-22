@@ -85,7 +85,13 @@ public enum ProjectPackage {
         let name="checkpoint-\(String(format:"%020.6f",Date().timeIntervalSince1970))-\(UUID().uuidString).json"
         try document.encoded().write(to:directory.appendingPathComponent(name),options:.atomic)
         let checkpoints=try fm.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil).filter { $0.lastPathComponent.hasPrefix("checkpoint-") && $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
-        for old in checkpoints.dropFirst(limit) { try fm.removeItem(at:old) }
+        // Recovery files from a newer app may contain work this build cannot interpret.
+        // Retain them verbatim; only the supported recovery history consumes this rotation limit.
+        let supported=checkpoints.filter { file in
+            guard let data=try? Data(contentsOf:file),let version=try? ProjectMigration.headerVersion(in:data) else{return true}
+            return version<=ProjectDocument.currentVersion
+        }
+        for old in supported.dropFirst(limit) { try fm.removeItem(at:old) }
     }
     public static func recoverLatest(in directory: URL) throws -> ProjectDocument? {
         let files=try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil).filter { $0.lastPathComponent.hasPrefix("checkpoint-") && $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
