@@ -1,6 +1,7 @@
 import Foundation
 
 public enum EditCommand: Sendable {
+    case extendFreezeFrame(clipID:UUID,duration:RationalTime,sourceFrameTime:RationalTime)
     case replace(ProjectDocument)
     case insertCopies(clipIDs:Set<UUID>,at:RationalTime)
     case overwriteCopies(clipIDs:Set<UUID>,at:RationalTime)
@@ -61,6 +62,7 @@ public enum EditCommand: Sendable {
     public func perform(_ command: EditCommand) throws {
         var next=document
         switch command {
+        case .extendFreezeFrame(let id,let duration,let time):next=try FreezeFrameEditing.extending(clipID:id,duration:duration,sourceFrameTime:time,in:document)
         case .replace(let replacement): next=replacement
         case .insertCopies,.overwriteCopies,.rippleTrim:next=try SpliceEditing.proposal(for:command,in:document).document
         case .move(let id, let time):
@@ -86,6 +88,7 @@ public enum EditCommand: Sendable {
                     let prior=clip
                     clip.start = try clip.start.checkedAdding(startDelta)
                     clip.duration = try clip.duration.checkedAdding(endDelta.checkedSubtracting(startDelta))
+                    if var frozen=clip.freezeFrame{frozen.effectTimeOffset=try frozen.effectTimeOffset.checkedAdding(startDelta);clip.freezeFrame=frozen}
                     clip.sourceStart=try prior.checkedSourceTime(at:prior.start.checkedAdding(startDelta))
                     if next.assets.first(where: { $0.id == clip.assetID })?.kind == .image { clip.sourceStart = .zero }
                     guard clip.sourceStart >= .zero else { throw DocumentError.sourceBoundary }
@@ -112,6 +115,7 @@ public enum EditCommand: Sendable {
                     var left=prior, right=prior
                     left.duration=try time.checkedSubtracting(prior.start)
                     right.id=UUID(); right.start=time; right.duration=try prior.end.checkedSubtracting(time); right.sourceStart=try prior.checkedSourceTime(at:time); right.linkID=rightLink
+                    if var frozen=right.freezeFrame{frozen.effectTimeOffset=try frozen.effectTimeOffset.checkedAdding(time.checkedSubtracting(prior.start));right.freezeFrame=frozen}
                     left.volume=try prior.volume.window(from:.zero,duration:left.duration); left.opacity=try prior.opacity.window(from:.zero,duration:left.duration)
                     right.volume=try prior.volume.window(from:left.duration,duration:right.duration); right.opacity=try prior.opacity.window(from:left.duration,duration:right.duration)
                     if let animation=prior.title?.animation { right.title?.animation=try animation.windowed(by:left.duration) }
@@ -129,7 +133,7 @@ public enum EditCommand: Sendable {
             }
         case .retime(let id, let speed, let preservesPitch):
             guard speed.isFinite, (0.25...4).contains(speed) else { throw DocumentError.invalidTiming }
-            _ = try find(id)
+            guard try find(id).freezeFrame == nil else{throw DocumentError.invalidTiming}
             let newRate=Int64((speed*1_000_000).rounded())
             for t in next.sequence.tracks.indices {
                 guard let c=next.sequence.tracks[t].clips.firstIndex(where: { $0.id == id }) else { continue }
@@ -213,6 +217,7 @@ public enum EditCommand: Sendable {
             let original=try find(id), delta=editTime(requestedDelta,for:try find(id))
             let ids=try expanded([original.id],links:true,groups:false)
             try update(&next,ids:ids) { clip in
+                guard clip.freezeFrame == nil else{throw DocumentError.sourceBoundary}
                 clip.sourceStart=try clip.sourceStart.checkedAdding(delta)
                 if document.assets.first(where: { $0.id == clip.assetID })?.kind == .image { clip.sourceStart = .zero }
                 guard clip.sourceStart >= .zero else { throw DocumentError.sourceBoundary }
@@ -230,7 +235,7 @@ public enum EditCommand: Sendable {
                 guard let l=leftIndex, let r=rightIndex else { throw DocumentError.invalidSplit }
                 guard !next.sequence.tracks[t].isLocked else { throw DocumentError.lockedTrack }
                 let left=next.sequence.tracks[t].clips[l], right=next.sequence.tracks[t].clips[r]
-                guard left.end == right.start, boundary > left.start, boundary < right.end else { throw DocumentError.invalidSplit }
+                guard left.freezeFrame == nil,right.freezeFrame == nil,left.end == right.start, boundary > left.start, boundary < right.end else { throw DocumentError.invalidSplit }
                 var newLeft=left, newRight=right
                 newLeft.duration=try boundary.checkedSubtracting(left.start)
                 newRight.start=boundary; newRight.duration=try right.end.checkedSubtracting(boundary)

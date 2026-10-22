@@ -83,7 +83,7 @@ final class LifeVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendab
         } else { return nil }
         if let title = layer.clip.title { foreground = TitleRenderer.animated(foreground, title: title, localTime: time - layer.clip.start, canvas: canvas) }
         let localTime = max(.zero, min(layer.clip.duration, time - layer.clip.start))
-        foreground = EffectRenderer.apply(layer.clip.effects ?? [], to: foreground, time: time - layer.clip.start)
+        foreground = EffectRenderer.apply(layer.clip.effects ?? [], to: foreground, time: time - layer.clip.start + (layer.clip.freezeFrame?.effectTimeOffset ?? .zero))
         foreground = EffectRenderer.transform(foreground, visual: layer.clip.visual, canvas: canvas)
         let opacity = max(0, min(1, layer.clip.opacity.value(at: localTime)))
         return foreground.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: opacity)])

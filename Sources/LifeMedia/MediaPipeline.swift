@@ -321,6 +321,13 @@ extension RationalTime {
                 guard let assetID = clip.assetID else { continue }
                 guard let reference = document.assets.first(where: { $0.id == assetID }),
                       FileManager.default.fileExists(atPath: (reference.preparedURL ?? reference.url).path) else { throw MediaError.missingAsset(assetID) }
+                if let frozen=clip.freezeFrame {
+                    if !track.isHidden {
+                        let image=try await frozenFrameImage(asset:reference,time:frozen.sourceTime,size:size)
+                        layers.append(RenderLayer(trackID:nil,clip:clip,transform:.identity,titleImage:image,renderStart:renderStart,renderEnd:renderEnd))
+                    }
+                    continue
+                }
                 if reference.kind == .image {
                     guard let image = StillImage.original(reference.preparedURL ?? reference.url) else { throw MediaError.unsupported(reference.url.lastPathComponent) }
                     if !track.isHidden {

@@ -56,6 +56,7 @@ public enum SpliceEditing {
         let offset=try start.checkedSubtracting(prior.start)
         result.sourceStart=try prior.checkedSourceTime(at:start)
         if document.assets.first(where:{$0.id==prior.assetID})?.kind == .image {result.sourceStart = .zero}
+        if var frozen=result.freezeFrame{frozen.effectTimeOffset=try frozen.effectTimeOffset.checkedAdding(offset);result.freezeFrame=frozen}
         result.volume.evaluationOffset=try prior.volume.evaluationOffset.checkedAdding(offset)
         result.opacity.evaluationOffset=try prior.opacity.evaluationOffset.checkedAdding(offset)
         if let animation=prior.title?.animation {result.title?.animation=try animation.windowed(by:offset)}

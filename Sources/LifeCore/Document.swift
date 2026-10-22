@@ -45,18 +45,21 @@ public struct Clip: Identifiable, Codable, Equatable, Sendable {
     public var start: RationalTime; public var duration: RationalTime; public var sourceStart: RationalTime
     public var speed: Double; public var preservesPitch: Bool; public var audioEnabled:Bool?; public var linkID: UUID?; public var groupID: UUID?
     public var volume: AutomationEnvelope; public var opacity: AutomationEnvelope; public var title: TitleContent?
+    public var freezeFrame:FreezeFrameContent?
     public var effects: [EffectInstance]?; public var visual: VisualTransform?; public var graphic: GraphicContent?; public var audio: AudioSettings?
-    public init(id: UUID = UUID(), name: String = "Clip", assetID: UUID? = nil, start: RationalTime = .zero, duration: RationalTime, sourceStart: RationalTime = .zero, speed: Double = 1, preservesPitch: Bool = true, linkID: UUID? = nil, volume: AutomationEnvelope = .init(), opacity: AutomationEnvelope = .init(), title: TitleContent? = nil, effects: [EffectInstance]? = nil, visual: VisualTransform? = nil, groupID: UUID? = nil, audioEnabled:Bool? = nil, graphic: GraphicContent? = nil, audio: AudioSettings? = nil) {
-        self.id=id; self.name=name; self.assetID=assetID; self.start=start; self.duration=duration; self.sourceStart=sourceStart; self.speed=speed; self.preservesPitch=preservesPitch; self.linkID=linkID; self.volume=volume; self.opacity=opacity; self.title=title; self.effects=effects; self.visual=visual;self.audioEnabled=audioEnabled; self.groupID=groupID; self.graphic=graphic; self.audio=audio
+    public init(id: UUID = UUID(), name: String = "Clip", assetID: UUID? = nil, start: RationalTime = .zero, duration: RationalTime, sourceStart: RationalTime = .zero, speed: Double = 1, preservesPitch: Bool = true, linkID: UUID? = nil, volume: AutomationEnvelope = .init(), opacity: AutomationEnvelope = .init(), title: TitleContent? = nil, effects: [EffectInstance]? = nil, visual: VisualTransform? = nil, groupID: UUID? = nil, audioEnabled:Bool? = nil, graphic: GraphicContent? = nil, audio: AudioSettings? = nil, freezeFrame:FreezeFrameContent? = nil) {
+        self.id=id; self.name=name; self.assetID=assetID; self.start=start; self.duration=duration; self.sourceStart=sourceStart; self.speed=speed; self.preservesPitch=preservesPitch; self.linkID=linkID; self.volume=volume; self.opacity=opacity; self.title=title; self.effects=effects; self.visual=visual;self.audioEnabled=audioEnabled; self.groupID=groupID; self.graphic=graphic; self.audio=audio;self.freezeFrame=freezeFrame
     }
     public var end: RationalTime { start + duration }
     public func checkedSourceTime(at sequenceTime: RationalTime) throws -> RationalTime {
+        if let freezeFrame{return freezeFrame.sourceTime}
         let local=try sequenceTime.checkedSubtracting(start)
         let offset=try local.checkedScaled(by:Int64((speed*1_000_000).rounded()),over:1_000_000)
         return try sourceStart.checkedAdding(offset)
     }
     public func sourceTime(at sequenceTime: RationalTime) -> RationalTime {
-        sourceStart + (sequenceTime-start).scaled(by: Int64((speed*1_000_000).rounded()), over: 1_000_000)
+        if let freezeFrame{return freezeFrame.sourceTime}
+        return sourceStart + (sequenceTime-start).scaled(by: Int64((speed*1_000_000).rounded()), over: 1_000_000)
     }
 }
 public struct Track: Identifiable, Codable, Equatable, Sendable {
@@ -132,6 +135,10 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
                   clip.speed.isFinite, (0.25...4).contains(clip.speed), clip.volume.baseValue.isFinite, clip.opacity.baseValue.isFinite,
                   (0...AudioSettings.maximumLinearGain).contains(clip.volume.baseValue), (0...1).contains(clip.opacity.baseValue),
                   clip.title == nil || (clip.title!.fontSize.isFinite && (1...4096).contains(clip.title!.fontSize)) else { throw DocumentError.invalidTiming }
+            if let frozen=clip.freezeFrame {
+                guard validTime(frozen.sourceTime),validTime(frozen.effectTimeOffset),clip.sourceStart==frozen.sourceTime,clip.audioEnabled == false,clip.title == nil,clip.graphic == nil,
+                      let asset=assets.first(where:{$0.id==clip.assetID}),asset.kind == .video,frozen.sourceTime<asset.duration else{throw DocumentError.sourceBoundary}
+            }
             if let audio=clip.audio, !audio.isValid { throw DocumentError.invalidTiming }
             if let graphic=clip.graphic {
                 guard clip.title == nil, graphic.isValid else { throw DocumentError.invalidTiming }
@@ -151,10 +158,12 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             }
             let end=try clip.start.checkedAdding(clip.duration)
             guard validTime(end) else { throw DocumentError.invalidTiming }
-            let sourceDuration=try clip.duration.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
-            let sourceEnd=try clip.sourceStart.checkedAdding(sourceDuration)
-            guard validTime(sourceEnd) else { throw DocumentError.invalidTiming }
-            if let asset=assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, sourceEnd > asset.duration { throw DocumentError.sourceBoundary }
+            if clip.freezeFrame == nil {
+                let sourceDuration=try clip.duration.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
+                let sourceEnd=try clip.sourceStart.checkedAdding(sourceDuration)
+                guard validTime(sourceEnd) else { throw DocumentError.invalidTiming }
+                if let asset=assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, sourceEnd > asset.duration { throw DocumentError.sourceBoundary }
+            }
             for (envelope,maximum) in [(clip.volume,AudioSettings.maximumLinearGain),(clip.opacity,1.0)] {
                 guard envelope.points.allSatisfy({ point in
                     let effective=envelope.baseValue*point.value
