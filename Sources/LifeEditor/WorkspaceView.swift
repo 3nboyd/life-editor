@@ -173,7 +173,7 @@ struct WorkspaceView: View {
                     TextField("Text",text:Binding(get:{store.selectedClip?.title?.text ?? ""},set:{text in store.editSelected{$0.title?.text=text}}),axis:.vertical).lineLimit(2...6)
                     TitleControls(store:store)
                     HStack { Text("Size"); Slider(value:Binding(get:{store.selectedClip?.title?.fontSize ?? 64},set:{v in store.editSelected{$0.title?.fontSize=v}}),in:16...160,onEditingChanged:gesture) }
-                } else if clip.assetID != nil {
+                } else if clip.assetID != nil,clip.freezeFrame == nil {
                     HStack { Text("Speed"); Spacer(); Text(String(format:"%.2f×",clip.speed)).monospacedDigit() }
                     Slider(value:Binding(get:{store.selectedClip?.speed ?? 1},set:{ v in store.setSpeed(v) }),in:0.25...4,step:0.05,onEditingChanged:gesture)
                     Toggle("Preserve pitch",isOn:Binding(get:{store.selectedClip?.preservesPitch ?? true},set:{v in store.editSelected{$0.preservesPitch=v}}))
