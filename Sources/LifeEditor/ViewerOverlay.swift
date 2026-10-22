@@ -65,6 +65,6 @@ struct ViewerOverlay:View {
                     VStack{HStack{Label("Sample color",systemImage:"eyedropper").font(.caption);Spacer();Button{store.cancelColorSampling()}label:{Image(systemName:"xmark")}.help("Cancel color sampling · Esc").accessibilityLabel("Cancel color sampling")};Spacer()}.padding(12)
                 }
             }
-        }.onExitCommand{store.cancelColorSampling()}.allowsHitTesting(store.panel != .multicam || store.samplingColor)
+        }.onExitCommand{if store.placementProposal != nil{store.cancelPlacement()}else{store.cancelColorSampling()}}.allowsHitTesting(store.panel != .multicam || store.samplingColor)
     }
 }

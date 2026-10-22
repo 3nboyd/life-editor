@@ -13,16 +13,32 @@ struct TimelineSurface: NSViewRepresentable {
     func updateNSView(_ scroll:NSScrollView,context:Context) {
         guard let timeline=scroll.documentView as? TimelineCanvas else{return}
         timeline.store=store
-        timeline.frame.size=NSSize(width:max(scroll.contentSize.width,140+max(20,store.document.sequence.duration.seconds+5)*store.pixelsPerSecond),height:max(scroll.contentSize.height,32+Double(store.document.sequence.tracks.count)*76))
+        timeline.synchronizeLayout()
+        timeline.frame.size=NSSize(width:max(scroll.contentSize.width,140+max(20,store.timelineDocument.sequence.duration.seconds+5)*store.pixelsPerSecond),height:max(scroll.contentSize.height,timeline.layout.totalHeight(for:timeline.tracks)))
         timeline.refreshAccessibility()
         timeline.loadWaveforms()
+        timeline.loadThumbnails()
         timeline.needsDisplay=true
     }
 }
 
 @MainActor final class TimelineCanvas: NSView {
     var store: EditorStore
-    let header:Double=140, lane:Double=76, ruler:Double=32
+    let header:Double=140,ruler:Double=32
+    let layout:TimelineLayout
+    private var resizingTrack:(id:UUID,originY:Double,height:Double)?
+    private var layoutTrackSelection:UUID?
+    private struct ThumbnailRequest {let key:String;let asset:MediaAsset;let stamp:String;let cell:TimelineThumbnailCell;let effects:[EffectInstance]}
+    private struct ThumbnailPlanSignature:Equatable {var document:ProjectDocument;var viewport:NSRect;var pps:Double;var layoutRevision:Int;var stamps:[UUID:String]}
+    private var thumbnailSignature:ThumbnailPlanSignature?
+    private var thumbnailRequests:[ThumbnailRequest]=[]
+    private var thumbnailImages:[String:CGImage]=[:]
+    private var thumbnailJobs:[String:Task<Void,Never>]=[:]
+    private var thumbnailFailures=Set<String>()
+    private var thumbnailStamps:[UUID:String]=[:]
+    private var thumbnailURLs:[UUID:URL]=[:]
+    private var thumbnailMetadataTask:Task<Void,Never>?
+    private var thumbnailMetadataPoll=Date.distantPast
     var drag: Drag?
     private enum AutomationDragMode { case point(UUID),base,fadeIn,fadeOut }
     private struct AutomationDrag { var clipID:UUID;var lane:AutomationLane;var mode:AutomationDragMode;var origin:NSPoint;var envelope:AutomationEnvelope }
@@ -40,42 +56,46 @@ struct TimelineSurface: NSViewRepresentable {
     private var sampleTasks:[String:Task<Void,Never>]=[:]
     private var accessibilityItems:[NSAccessibilityElement]=[]
     private struct AccessibilitySignature: Equatable {
-        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double
+        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double;var layoutRevision:Int
     }
     private var accessibilitySignature: AccessibilitySignature?
     private(set) var accessibilityRebuildCount=0
     func refreshAccessibility(){
-        let signature=AccessibilitySignature(document:store.document,selection:store.selectedIDs,frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond)
+        let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision)
         guard signature != accessibilitySignature else { return }
         accessibilitySignature=signature; accessibilityRebuildCount += 1
         var elements:[NSAccessibilityElement]=[]
         for (row,track) in tracks.enumerated(){
             for clip in track.clips {
                 let element=TimelineActionElement { [weak self] in
-                    guard let self else { return false }
+                    guard let self,self.store.placementProposal == nil else { return false }
                     self.store.selectedIDs=[clip.id];self.store.selection=clip.id;self.store.panel = .clip
                     self.window?.makeFirstResponder(self);return true
                 }
                 element.setAccessibilityRole(.button)
                 element.setAccessibilityParent(self)
                 element.setAccessibilityLabel(track.name+": "+clip.name)
-                element.setAccessibilityValue(String(format:"%.3f seconds, %.3f seconds long",clip.start.seconds,clip.duration.seconds)+(track.isLocked ? ", locked":"")+(store.selectedIDs.contains(clip.id) ? ", selected":""))
+                element.setAccessibilityValue(String(format:"%.3f seconds, %.3f seconds long",clip.start.seconds,clip.duration.seconds)+(track.isLocked ? ", locked":"")+((store.selectedIDs.contains(clip.id) || store.placementProposal?.insertedClipIDs.contains(clip.id) == true) ? ", selected":""))
                 let frame=convert(rect(clip,row:row),to:nil)
                 element.setAccessibilityFrame(window?.convertToScreen(frame) ?? frame)
                 elements.append(element)
             }
             for (index,label) in ["Mute","Hide","Lock"].enumerated(){
                 let element=TimelineActionElement { [weak self] in
-                    guard let self else { return false }
+                    guard let self,self.store.placementProposal == nil else { return false }
                     self.store.toggleTrack(track.id,property:["mute","hide","lock"][index]);return true
                 }
                 element.setAccessibilityRole(.button);element.setAccessibilityParent(self);element.setAccessibilityLabel(label+" "+track.name)
-                let frame=convert(NSRect(x:visibleRect.minX+12+Double(index)*36,y:ruler+Double(row)*lane+47,width:28,height:24),to:nil)
+                let frame=convert(NSRect(x:visibleRect.minX+12+Double(index)*36,y:rowLayout(row).bottom-26,width:28,height:24),to:nil)
                 element.setAccessibilityFrame(window?.convertToScreen(frame) ?? frame);elements.append(element)
             }
+            let height=TimelineHeightElement(increment:{[weak self] in self?.resizeTrack(track.id,by:16) ?? false},decrement:{[weak self] in self?.resizeTrack(track.id,by:-16) ?? false})
+            height.setAccessibilityRole(.slider);height.setAccessibilityParent(self);height.setAccessibilityLabel("Height "+track.name);height.setAccessibilityValue(layout.height(for:track.id));height.setAccessibilityMinValue(56);height.setAccessibilityMaxValue(240)
+            let heightFrame=convert(NSRect(x:visibleRect.minX,y:rowLayout(row).bottom-4,width:header,height:8),to:nil)
+            height.setAccessibilityFrame(window?.convertToScreen(heightFrame) ?? heightFrame);elements.append(height)
         }
-        for marker in store.document.sequence.markers {
-            guard let range=MarkerResolver.sequenceRange(marker,in:store.document) else { continue }
+        for marker in store.timelineDocument.sequence.markers {
+            guard let range=MarkerResolver.sequenceRange(marker,in:store.timelineDocument) else { continue }
             let element=TimelineActionElement { [weak self] in
                 guard let self else { return false };self.store.seek(range.start.seconds);return true
             }
@@ -90,7 +110,7 @@ struct TimelineSurface: NSViewRepresentable {
     override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); observeGeometry() }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow();observeGeometry();refreshAccessibility()
-        if window == nil {for task in waveformTasks.values{task.cancel()};for task in sampleTasks.values{task.cancel()};waveformTasks.removeAll();sampleTasks.removeAll()}
+        if window == nil {for task in waveformTasks.values{task.cancel()};for task in sampleTasks.values{task.cancel()};waveformTasks.removeAll();sampleTasks.removeAll();for task in thumbnailJobs.values{task.cancel()};thumbnailJobs.removeAll();thumbnailMetadataTask?.cancel();thumbnailMetadataTask=nil}
     }
     private func observeGeometry() {
         let center=NotificationCenter.default
@@ -98,11 +118,84 @@ struct TimelineSurface: NSViewRepresentable {
         if let clip=enclosingScrollView?.contentView { clip.postsBoundsChangedNotifications=true; center.addObserver(self,selector:#selector(geometryChanged),name:NSView.boundsDidChangeNotification,object:clip) }
         if let window { for name in [NSWindow.didMoveNotification,NSWindow.didResizeNotification] { center.addObserver(self,selector:#selector(geometryChanged),name:name,object:window) } }
     }
-    @objc private func geometryChanged(_ notification:Notification) { refreshAccessibility();loadWaveforms();needsDisplay=true }
+    @objc private func geometryChanged(_ notification:Notification) { refreshAccessibility();loadWaveforms();loadThumbnails();needsDisplay=true }
+
+    @discardableResult func setTrackHeight(_ height:Double,for id:UUID)->Bool {
+        guard layout.setHeight(height,for:id) else{return false}
+        setFrameSize(NSSize(width:frame.width,height:max(enclosingScrollView?.contentSize.height ?? 0,layout.totalHeight(for:tracks))))
+        refreshAccessibility();loadWaveforms();loadThumbnails();window?.invalidateCursorRects(for:self);needsDisplay=true;return true
+    }
+    @discardableResult func resizeTrack(_ id:UUID,by delta:Double)->Bool {setTrackHeight(layout.height(for:id)+delta,for:id)}
+    override func resetCursorRects(){super.resetCursorRects();for row in layout.rows(for:tracks){addCursorRect(NSRect(x:visibleRect.minX,y:row.bottom-4,width:header,height:8),cursor:.resizeUpDown)}}
+    override func menu(for event:NSEvent)->NSMenu? {
+        let point=convert(event.locationInWindow,from:nil)
+        guard point.x<visibleRect.minX+header,let row=layout.row(at:point.y,tracks:tracks) else{return super.menu(for:event)}
+        let menu=NSMenu();for (label,height) in [("Compact",56.0),("Medium",76.0),("Large",140.0),("Tall",220.0)] {
+            let item=NSMenuItem(title:label,action:#selector(heightPreset(_:)),keyEquivalent:"");item.target=self;item.representedObject=["id":tracks[row].id.uuidString,"height":String(height)];menu.addItem(item)
+        };return menu
+    }
+    @objc private func heightPreset(_ sender:NSMenuItem){guard let data=sender.representedObject as? [String:String],let raw=data["id"],let id=UUID(uuidString:raw),let value=data["height"].flatMap(Double.init) else{return};_ = setTrackHeight(value,for:id)}
+    func loadThumbnails(){
+        let visible=tracks.enumerated().flatMap{row,track in track.clips.filter{rect($0,row:row).intersects(visibleRect)}}
+        let ids=Set(visible.compactMap(\.assetID));let assets=store.timelineDocument.assets.filter{ids.contains($0.id) && $0.kind != .audio}
+        var changed=false
+        for asset in assets {let url=asset.preparedURL ?? asset.url;if thumbnailURLs[asset.id] != url{thumbnailURLs[asset.id]=url;thumbnailStamps.removeValue(forKey:asset.id);changed=true}}
+        if changed{thumbnailMetadataPoll = .distantPast}
+        if thumbnailMetadataTask == nil,Date().timeIntervalSince(thumbnailMetadataPoll)>2 {
+            thumbnailMetadataPoll=Date();let project=store.timelineDocument.id
+            thumbnailMetadataTask=Task{[weak self] in
+                for asset in assets {
+                    let stamp=try? await TimelineThumbnailCache.shared.sourceStamp(for:asset)
+                    guard !Task.isCancelled,let self,self.store.timelineDocument.id==project else{return}
+                    if self.thumbnailURLs[asset.id]==(asset.preparedURL ?? asset.url){self.thumbnailStamps[asset.id]=stamp}
+                }
+                guard let self else{return};self.thumbnailMetadataTask=nil;self.loadThumbnails()
+            }
+        }
+        let signature=ThumbnailPlanSignature(document:store.timelineDocument,viewport:visibleRect,pps:store.pixelsPerSecond,layoutRevision:layout.revision,stamps:thumbnailStamps)
+        if signature != thumbnailSignature {
+            thumbnailSignature=signature;thumbnailRequests=[]
+            let range=max(0,(visibleRect.minX-header)/store.pixelsPerSecond)...max(0,(visibleRect.maxX-header)/store.pixelsPerSecond)
+            for clip in visible {
+                guard thumbnailRequests.count<128,let asset=assets.first(where:{$0.id==clip.assetID}),let stamp=thumbnailStamps[asset.id] else{continue}
+                let effects=clip.effects ?? []
+                for cell in FilmstripPlanner.cells(clip:clip,assetKind:asset.kind,visibleRange:range,pixelsPerSecond:store.pixelsPerSecond,maximumCount:min(24,128-thumbnailRequests.count)) {
+                    if let key=try? TimelineThumbnailCache.logicalKey(sourceStamp:stamp,sourceTime:cell.sourceTime,effects:effects){thumbnailRequests.append(ThumbnailRequest(key:key,asset:asset,stamp:stamp,cell:cell,effects:effects))}
+                }
+            }
+            let keys=Set(thumbnailRequests.map(\.key))
+            for (key,job) in thumbnailJobs where !keys.contains(key){job.cancel();thumbnailJobs.removeValue(forKey:key)}
+            thumbnailImages=thumbnailImages.filter{keys.contains($0.key)};thumbnailFailures.formIntersection(keys)
+        }
+        for request in thumbnailRequests where thumbnailJobs.count<2 && thumbnailImages[request.key]==nil && thumbnailJobs[request.key]==nil && !thumbnailFailures.contains(request.key) {
+            thumbnailJobs[request.key]=Task{[weak self] in
+                do {
+                    let result=try await TimelineThumbnailCache.shared.image(for:request.asset,sourceTime:request.cell.sourceTime,effects:request.effects)
+                    guard !Task.isCancelled,let self,self.thumbnailRequests.contains(where:{$0.key==request.key}),self.thumbnailStamps[request.asset.id]==request.stamp else{return}
+                    self.thumbnailImages[request.key]=result.image
+                } catch {if !Task.isCancelled{self?.thumbnailFailures.insert(request.key)}}
+                guard !Task.isCancelled,let self else{return};self.thumbnailJobs.removeValue(forKey:request.key);self.needsDisplay=true;self.loadThumbnails()
+            }
+        }
+    }
+    private func drawFilmstrip(_ clip:Clip,in box:NSRect){
+        guard let context=NSGraphicsContext.current?.cgContext else{return}
+        var drawn=false
+        for request in thumbnailRequests where request.cell.clipID==clip.id {
+            guard let image=thumbnailImages[request.key] else{continue};drawn=true
+            let cell=NSRect(x:box.minX+request.cell.offsetPixels,y:box.minY,width:request.cell.widthPixels,height:box.height)
+            let scale=max(cell.width/Double(image.width),cell.height/Double(image.height))
+            let size=NSSize(width:Double(image.width)*scale,height:Double(image.height)*scale)
+            context.saveGState();context.clip(to:cell)
+            NSImage(cgImage:image,size:.zero).draw(in:NSRect(x:cell.midX-size.width/2,y:cell.midY-size.height/2,width:size.width,height:size.height),from:.zero,operation:.sourceOver,fraction:0.48,respectFlipped:true,hints:nil)
+            context.restoreGState()
+        }
+        if drawn{NSColor.black.withAlphaComponent(0.3).setFill();NSRect(x:box.minX,y:box.minY,width:box.width,height:23).fill()}
+    }
 
     func loadWaveforms() {
         let visibleIDs=Set(tracks.enumerated().flatMap { row,track in track.clips.filter { rect($0,row:row).intersects(visibleRect) }.compactMap(\.assetID) })
-        let assets=store.document.assets.filter { $0.kind != .image && visibleIDs.contains($0.id) }
+        let assets=store.timelineDocument.assets.filter { $0.kind != .image && visibleIDs.contains($0.id) }
         let active=Set(assets.map(\.id))
         for id in Array(waveformTasks.keys) where !active.contains(id) { waveformTasks.removeValue(forKey:id)?.cancel() }
         waveforms=waveforms.filter { active.contains($0.key) };requested=requested.filter { active.contains($0.key) }
@@ -170,13 +263,21 @@ struct TimelineSurface: NSViewRepresentable {
     }
     enum Mode { case move, left, right, fadeIn, fadeOut }
     struct Drag { var clip:Clip; var track:Track; var origin:NSPoint; var mode:Mode; var target:Double }
-    init(store:EditorStore) { self.store=store; super.init(frame:.zero); setAccessibilityElement(false); setAccessibilityRole(.group); setAccessibilityLabel("Layered timeline. Select clips by clicking; use Clip panel for keyboard positioning.");registerForDraggedTypes([.string]) }
+    init(store:EditorStore,layout:TimelineLayout? = nil) { self.store=store;self.layout=layout ?? TimelineLayout(projectID:store.timelineDocument.id); super.init(frame:.zero); setAccessibilityElement(false); setAccessibilityRole(.group); setAccessibilityLabel("Layered timeline. Select clips by clicking; use Clip panel for keyboard positioning.");registerForDraggedTypes([.string]) }
     required init?(coder:NSCoder) { fatalError("init(coder:) unavailable") }
     override var isFlipped:Bool { true }
     override var acceptsFirstResponder:Bool { true }
-    var tracks:[Track] { Array(store.document.sequence.tracks.reversed()) }
+    var tracks:[Track] { Array(store.timelineDocument.sequence.tracks.reversed()) }
     func x(_ time:Double)->Double { header+time*store.pixelsPerSecond }
-    func rect(_ clip:Clip,row:Int)->NSRect { NSRect(x:x(clip.start.seconds),y:ruler+Double(row)*lane+7,width:max(3,clip.duration.seconds*store.pixelsPerSecond),height:62) }
+    private func rowLayout(_ index:Int)->TimelineTrackRow { layout.rows(for:tracks)[index] }
+    func synchronizeLayout(){
+        guard layout.projectID != store.timelineDocument.id else{return}
+        layout.useProject(store.timelineDocument.id)
+        thumbnailMetadataTask?.cancel();thumbnailMetadataTask=nil
+        for task in thumbnailJobs.values{task.cancel()};thumbnailJobs.removeAll()
+        thumbnailURLs.removeAll();thumbnailStamps.removeAll();thumbnailImages.removeAll();thumbnailFailures.removeAll();thumbnailRequests=[];thumbnailSignature=nil;thumbnailMetadataPoll = .distantPast
+    }
+    func rect(_ clip:Clip,row:Int)->NSRect {let row=rowLayout(row);return NSRect(x:x(clip.start.seconds),y:row.top+7,width:max(3,clip.duration.seconds*store.pixelsPerSecond),height:max(1,row.height-14))}
     func text(_ string:String,_ point:NSPoint,color:NSColor = .secondaryLabelColor,size:CGFloat=11) {
         (string as NSString).draw(at:point,withAttributes:[.font:NSFont.systemFont(ofSize:size),.foregroundColor:color])
     }
@@ -187,7 +288,7 @@ struct TimelineSurface: NSViewRepresentable {
         let visible=visibleRect
         let lower=max(0,(visible.minX-header)/pps), upper=max(lower,(visible.maxX-header)/pps)
         if store.gridVisible {
-            if store.gridMode == .beats,let grid=store.document.sequence.musicalGrid {
+            if store.gridMode == .beats,let grid=store.timelineDocument.sequence.musicalGrid {
                 var displayed=grid
                 let beatPixels=60/grid.bpm*4/Double(grid.beatUnit ?? 4)*pps
                 if beatPixels/Double(grid.subdivision)<5 { displayed.subdivision=1 }
@@ -215,24 +316,25 @@ struct TimelineSurface: NSViewRepresentable {
                 if last >= first && last-first<2000 { for i in first...last {
                     let xx=x(Double(i)*step);NSColor(white:0.22,alpha:1).setStroke()
                     let path=NSBezierPath();path.move(to:NSPoint(x:xx,y:0));path.line(to:NSPoint(x:xx,y:bounds.height));path.lineWidth=0.5;path.stroke()
-                    let label=store.gridMode == .frames ? "\(Int64((Double(i)*step/store.document.sequence.settings.frameRate.frameDuration.seconds).rounded()))f":String(format:step<1 ? "%.2fs":"%.0fs",Double(i)*step)
+                    let label=store.gridMode == .frames ? "\(Int64((Double(i)*step/store.timelineDocument.sequence.settings.frameRate.frameDuration.seconds).rounded()))f":String(format:step<1 ? "%.2fs":"%.0fs",Double(i)*step)
                     text(label,NSPoint(x:xx+5,y:9),size:10)
                 } }
             }
         }
         for (row,track) in tracks.enumerated() {
-            let top=ruler+Double(row)*lane
-            NSColor(white:0.2,alpha:1).setStroke();let divider=NSBezierPath();divider.move(to:NSPoint(x:0,y:top+lane));divider.line(to:NSPoint(x:bounds.width,y:top+lane));divider.stroke()
+            let geometry=rowLayout(row),top=geometry.top
+            NSColor(white:0.2,alpha:1).setStroke();let divider=NSBezierPath();divider.move(to:NSPoint(x:0,y:geometry.bottom));divider.line(to:NSPoint(x:bounds.width,y:geometry.bottom));divider.stroke()
             for clip in track.clips {
                 let box=rect(clip,row:row)
                 guard box.intersects(visibleRect) else{continue}
                 let startPixel=max(0,visibleRect.minX-box.minX)
                 let endPixel=min(box.width,visibleRect.maxX-box.minX)
-                let selected=store.selectedIDs.contains(clip.id)
+                let selected=store.selectedIDs.contains(clip.id) || store.placementProposal?.insertedClipIDs.contains(clip.id) == true
                 let fill:NSColor = track.kind == .audio ? NSColor(red:0.19,green:0.34,blue:0.31,alpha:1) : track.kind == .title ? NSColor(red:0.36,green:0.30,blue:0.41,alpha:1) : NSColor(red:0.24,green:0.30,blue:0.36,alpha:1)
                 fill.withAlphaComponent(track.isHidden ? 0.35 : 1).setFill(); NSBezierPath(roundedRect:box,xRadius:5,yRadius:5).fill()
                 if selected { NSColor.white.withAlphaComponent(0.8).setStroke();let outline=NSBezierPath(roundedRect:box.insetBy(dx:1,dy:1),xRadius:4,yRadius:4);outline.lineWidth=1.5;outline.stroke() }
                 NSGraphicsContext.saveGraphicsState();NSBezierPath(rect:box.insetBy(dx:4,dy:2)).addClip()
+                drawFilmstrip(clip,in:box)
                 text(clip.name,NSPoint(x:box.minX+8,y:box.minY+6),color:.white)
                 if let assetID=clip.assetID,let overview=waveforms[assetID] {
                     drawWaveform(overview,assetID:assetID,clip:clip,box:box,from:startPixel,to:endPixel)
@@ -265,11 +367,11 @@ struct TimelineSurface: NSViewRepresentable {
                 }
                 NSGraphicsContext.restoreGraphicsState()
             }
-            NSColor(white:0.10,alpha:1).setFill();NSRect(x:visible.minX,y:top,width:header,height:lane).fill()
+            NSColor(white:0.10,alpha:1).setFill();NSRect(x:visible.minX,y:top,width:header,height:geometry.height).fill()
             text(track.name,NSPoint(x:visible.minX+12,y:top+11),color:.labelColor)
-            text(track.isLocked ? "● Locked" : (track.kind == .audio ? "Audio" : "Video"),NSPoint(x:visible.minX+12,y:top+30),size:10)
+            if geometry.height>=72 {text(track.isLocked ? "● Locked" : (track.kind == .audio ? "Audio" : "Video"),NSPoint(x:visible.minX+12,y:top+30),size:10)}
             for (i,symbol) in [track.isMuted ? "speaker.slash.fill" : "speaker.wave.2",track.isHidden ? "eye.slash" : "eye",track.isLocked ? "lock.fill" : "lock.open"].enumerated() {
-                let r=NSRect(x:visible.minX+12+Double(i)*36,y:top+47,width:24,height:20)
+                let r=NSRect(x:visible.minX+12+Double(i)*36,y:geometry.bottom-26,width:24,height:20)
                 NSImage(systemSymbolName:symbol,accessibilityDescription:nil)?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors:[NSColor(calibratedWhite:0.75,alpha:1)]))?.draw(in:r)
             }
         }
@@ -277,8 +379,8 @@ struct TimelineSurface: NSViewRepresentable {
         text("TRACKS",NSPoint(x:visible.minX+12,y:10),size:9)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect:NSRect(x:visible.minX+header,y:0,width:max(0,visible.width-header),height:bounds.height)).addClip()
-        for marker in store.document.sequence.markers {
-            guard let range=MarkerResolver.sequenceRange(marker,in:store.document) else { continue }
+        for marker in store.timelineDocument.sequence.markers {
+            guard let range=MarkerResolver.sequenceRange(marker,in:store.timelineDocument) else { continue }
             let xx=x(range.start.seconds), end=x(range.end.seconds)
             let markerColor=marker.color.map { NSColor(srgbRed:$0.red,green:$0.green,blue:$0.blue,alpha:$0.alpha) } ?? NSColor.systemOrange
             if range.duration > .zero {
@@ -290,10 +392,10 @@ struct TimelineSurface: NSViewRepresentable {
             if !marker.name.isEmpty { text(marker.name,NSPoint(x:xx+7,y:4),color:markerColor,size:10) }
         }
         NSGraphicsContext.restoreGraphicsState()
-        for transition in store.document.sequence.transitions ?? [] {
+        for transition in store.timelineDocument.sequence.transitions ?? [] {
             guard let trackIndex=tracks.firstIndex(where:{$0.id==transition.trackID}),let left=tracks[trackIndex].clips.first(where:{$0.id==transition.leftClipID}) else{continue}
             let box=transitionRect(transition,center:left.end.seconds,row:trackIndex)
-            let valid=TransitionResolver.resolve(transition,in:store.document) != nil
+            let valid=TransitionResolver.resolve(transition,in:store.timelineDocument) != nil
             (valid ? NSColor(calibratedWhite:0.65,alpha:0.9):NSColor.systemOrange.withAlphaComponent(0.7)).setFill();NSBezierPath(roundedRect:box,xRadius:3,yRadius:3).fill()
             NSGraphicsContext.saveGraphicsState();NSBezierPath(rect:box).addClip();text("◇",NSPoint(x:box.midX-5,y:box.minY+2),color:.black,size:12);NSGraphicsContext.restoreGraphicsState()
             if store.selectedTransition==transition.id {NSColor.white.setStroke();NSBezierPath(rect:box.insetBy(dx:-1,dy:-1)).stroke()}
@@ -304,25 +406,28 @@ struct TimelineSurface: NSViewRepresentable {
         let xx=x(store.playhead); NSColor(red:0.7,green:0.9,blue:0.85,alpha:1).setStroke();let p=NSBezierPath();p.move(to:NSPoint(x:xx,y:0));p.line(to:NSPoint(x:xx,y:bounds.height));p.lineWidth=1.5;p.stroke()
     }
     override func mouseDown(with event:NSEvent) {
+        if store.placementProposal != nil {let point=convert(event.locationInWindow,from:nil);if point.x>=visibleRect.minX+header{store.seek(max(0,(point.x-header)/store.pixelsPerSecond))};return}
         window?.makeFirstResponder(self)
         let point=convert(event.locationInWindow,from:nil)
-        let row=Int((point.y-ruler)/lane)
-        guard point.y>=ruler,row>=0,row<tracks.count else { store.seek((point.x-header)/store.pixelsPerSecond);return }
-        let track=tracks[row]
+        if point.x<visibleRect.minX+header,let boundary=layout.rows(for:tracks).first(where:{abs($0.bottom-point.y)<=4}) {
+            layoutTrackSelection=boundary.trackID;resizingTrack=(boundary.trackID,Double(point.y),boundary.height);NSCursor.resizeUpDown.set();return
+        }
+        guard let row=layout.row(at:point.y,tracks:tracks) else {store.seek((point.x-header)/store.pixelsPerSecond);return}
+        let track=tracks[row];layoutTrackSelection=track.id
         if point.x<visibleRect.minX+header {
-            if point.y-(ruler+Double(row)*lane)>45 {
+            if point.y>=rowLayout(row).bottom-28 {
                 let i=Int((point.x-visibleRect.minX-12)/36)
                 if (0...2).contains(i) {store.toggleTrack(track.id,property:["mute","hide","lock"][i])}
             }
             return
         }
-        for transition in store.document.sequence.transitions ?? [] where transition.trackID==track.id {
+        for transition in store.timelineDocument.sequence.transitions ?? [] where transition.trackID==track.id {
             guard let left=track.clips.first(where:{$0.id==transition.leftClipID}) else{continue}
             let box=transitionRect(transition,center:left.end.seconds,row:row)
             if box.contains(point){
                 store.selection=left.id;store.selectedTransition=transition.id;store.panel = .effects
                 if !track.isLocked,abs(point.x-box.minX)<8 || abs(point.x-box.maxX)<8,
-                   let maximum=try? TransitionResolver.availableDuration(leftClipID:transition.leftClipID,rightClipID:transition.rightClipID,in:store.document,excluding:transition.id){
+                   let maximum=try? TransitionResolver.availableDuration(leftClipID:transition.leftClipID,rightClipID:transition.rightClipID,in:store.timelineDocument,excluding:transition.id){
                     transitionResize=(transition.id,Double(point.x),transition.duration.seconds,maximum.seconds,point.x<box.midX ? -1.0:1.0);store.beginGesture()
                 }
                 needsDisplay=true;return
@@ -363,6 +468,8 @@ struct TimelineSurface: NSViewRepresentable {
         needsDisplay=true
     }
     override func mouseDragged(with event:NSEvent) {
+        guard store.placementProposal == nil else{return}
+        if let resize=resizingTrack {let point=convert(event.locationInWindow,from:nil);_ = setTrackHeight(resize.height+point.y-resize.originY,for:resize.id);return}
         if let gesture=automationDrag,let clip=store.selectedClip,clip.id == gesture.clipID,let row=tracks.firstIndex(where: { $0.clips.contains { $0.id == clip.id } }) {
             let point=convert(event.locationInWindow,from:nil),box=rect(clip,row:row)
             snapX=nil;snapLabel=nil
@@ -384,7 +491,7 @@ struct TimelineSurface: NSViewRepresentable {
         }
         if let resize=transitionResize {
             let point=convert(event.locationInWindow,from:nil)
-            let minimum=store.document.sequence.settings.frameRate.frameDuration.seconds
+            let minimum=store.timelineDocument.sequence.settings.frameRate.frameDuration.seconds
             let duration=max(minimum,min(resize.maximum,resize.duration+(point.x-resize.origin)/store.pixelsPerSecond*2*resize.sign))
             store.apply(.setTransitionDuration(id:resize.id,duration:store.time(duration)));return
         }
@@ -404,6 +511,8 @@ struct TimelineSurface: NSViewRepresentable {
         needsDisplay=true
     }
     override func mouseUp(with event:NSEvent) {
+        guard store.placementProposal == nil else{drag=nil;automationDrag=nil;transitionResize=nil;resizingTrack=nil;ghost=nil;snapX=nil;snapLabel=nil;return}
+        if resizingTrack != nil {resizingTrack=nil;NSCursor.arrow.set();return}
         if automationDrag != nil { automationDrag=nil;snapX=nil;snapLabel=nil;store.endGesture();needsDisplay=true;return }
         if transitionResize != nil {transitionResize=nil;store.endGesture();return}
         defer{drag=nil;ghost=nil;snapX=nil;snapLabel=nil;needsDisplay=true}
@@ -419,7 +528,7 @@ struct TimelineSurface: NSViewRepresentable {
     private func drawWaveform(_ overview:WaveformOverview,assetID:UUID,clip:Clip,box:NSRect,from lower:Double,to upper:Double) {
         let pyramid=overview.pyramid,rate=pyramid.sampleRate,samplesPerPixel=rate*clip.speed/store.pixelsPerSecond
         guard let level=pyramid.level(samplesPerPixel:samplesPerPixel),lower<=upper else{return}
-        let channelHeight=30/Double(max(1,pyramid.channelCount)),top=box.minY+27
+        let channelHeight=max(8,box.height-29)/Double(max(1,pyramid.channelCount)),top=box.minY+24
         for channel in 0..<pyramid.channelCount {
             let center=top+(Double(channel)+0.5)*channelHeight,amplitude=max(1,channelHeight/2-1)
             let path=NSBezierPath()
@@ -474,25 +583,25 @@ struct TimelineSurface: NSViewRepresentable {
         if store.selection == clip.id { return store.automationLane }
         return (track.kind == .audio || track.kind == .video) ? .volume:.opacity
     }
-    private func automationY(_ value:Double,box:NSRect,lane:AutomationLane)->Double { box.maxY-8-AutomationScale.position(value,lane:lane)*28 }
-    private func automationValue(_ y:Double,box:NSRect,lane:AutomationLane)->Double { AutomationScale.value((box.maxY-8-y)/28,lane:lane) }
+    private func automationY(_ value:Double,box:NSRect,lane:AutomationLane)->Double { box.maxY-8-AutomationScale.position(value,lane:lane)*max(12,min(80,box.height-34)) }
+    private func automationValue(_ y:Double,box:NSRect,lane:AutomationLane)->Double { AutomationScale.value((box.maxY-8-y)/max(12,min(80,box.height-34)),lane:lane) }
     private func automationPointPosition(_ point:AutomationPoint,envelope:AutomationEnvelope,clip:Clip,box:NSRect,lane:AutomationLane)->NSPoint {
         NSPoint(x:x(clip.start.seconds+(point.time-envelope.evaluationOffset).seconds),y:automationY(point.value*envelope.baseValue,box:box,lane:lane))
     }
     private var frameGridStep:Double {
-        let frame=store.document.sequence.settings.frameRate.frameDuration.seconds
+        let frame=store.timelineDocument.sequence.settings.frameRate.frameDuration.seconds
         return frame*max(1,ceil(80/store.pixelsPerSecond/frame))
     }
     private var timeGridStep: Double { [0.01,0.05,0.1,0.25,0.5,1,2,5,10,30,60,120,300].first { $0>=80/store.pixelsPerSecond } ?? 600 }
     /// Explicit edits take priority over a closer ordinary grid division, within eight screen pixels.
     func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil) -> (time:Double,label:String)? {
-        var explicit:[(time:Double,label:String)]=store.document.sequence.tracks.flatMap(\.clips).filter { !excluding.contains($0.id) }.flatMap { [($0.start.seconds,"Clip"),($0.end.seconds,"Clip")] }
-        for marker in store.document.sequence.markers {
-            guard let range=MarkerResolver.sequenceRange(marker,in:store.document) else { continue }
+        var explicit:[(time:Double,label:String)]=store.timelineDocument.sequence.tracks.flatMap(\.clips).filter { !excluding.contains($0.id) }.flatMap { [($0.start.seconds,"Clip"),($0.end.seconds,"Clip")] }
+        for marker in store.timelineDocument.sequence.markers {
+            guard let range=MarkerResolver.sequenceRange(marker,in:store.timelineDocument) else { continue }
             let label=marker.name.isEmpty ? "Marker":marker.name
             explicit.append((range.start.seconds,label));if range.duration > .zero { explicit.append((range.end.seconds,label)) }
         }
-        for clip in store.document.sequence.tracks.flatMap(\.clips) where !excluding.contains(clip.id) {
+        for clip in store.timelineDocument.sequence.tracks.flatMap(\.clips) where !excluding.contains(clip.id) {
             for envelope in [clip.volume,clip.opacity] {
                 for point in envelope.points where point.id != excludingPoint && point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
                     explicit.append((clip.start.seconds+(point.time-envelope.evaluationOffset).seconds,"Point"))
@@ -504,13 +613,13 @@ struct TimelineSurface: NSViewRepresentable {
         if let nearest=candidates.min(by:{abs($0.time-target)<abs($1.time-target)}) { return nearest }
         let gridTarget:Double
         let label:String
-        if store.gridMode == .beats,let grid=store.document.sequence.musicalGrid,let nearest=grid.nearestDivision(to:store.time(max(0,target),audio:true)) { gridTarget=nearest.time.seconds;label=nearest.isBar ? "Bar":"Beat" }
-        else if store.gridMode == .frames { gridTarget=store.document.sequence.settings.frameRate.quantized(store.time(target,audio:true)).seconds;label="Frame" }
+        if store.gridMode == .beats,let grid=store.timelineDocument.sequence.musicalGrid,let nearest=grid.nearestDivision(to:store.time(max(0,target),audio:true)) { gridTarget=nearest.time.seconds;label=nearest.isBar ? "Bar":"Beat" }
+        else if store.gridMode == .frames { gridTarget=store.timelineDocument.sequence.settings.frameRate.quantized(store.time(target,audio:true)).seconds;label="Frame" }
         else { gridTarget=(target/timeGridStep).rounded()*timeGridStep;label="Grid" }
         return gridTarget >= 0 && abs(gridTarget-target)*store.pixelsPerSecond<=8 ? (gridTarget,label):nil
     }
     private func snapExclusions(for drag:Drag)->Set<UUID> {
-        let clips=store.document.sequence.tracks.flatMap(\.clips)
+        let clips=store.timelineDocument.sequence.tracks.flatMap(\.clips)
         var ids=drag.mode == .move ? store.selectedIDs.union([drag.clip.id]):[drag.clip.id]
         while true {
             let members=clips.filter { ids.contains($0.id) }, links=Set(members.compactMap(\.linkID)),groups=Set(members.compactMap(\.groupID)), prior=ids
@@ -519,12 +628,13 @@ struct TimelineSurface: NSViewRepresentable {
         }
     }
     private func transitionRect(_ transition:VideoTransition,center:Double,row:Int)->NSRect{
-        NSRect(x:x(center-transition.duration.seconds/2),y:ruler+Double(row)*lane+29,width:max(12,transition.duration.seconds*store.pixelsPerSecond),height:22)
+        NSRect(x:x(center-transition.duration.seconds/2),y:rowLayout(row).top+29,width:max(12,transition.duration.seconds*store.pixelsPerSecond),height:22)
     }
     private func dropPair(_ sender:any NSDraggingInfo)->(Clip,Clip)? {
+        guard store.placementProposal == nil else{return nil}
         guard let value=sender.draggingPasteboard.string(forType:.string),value.hasPrefix("life.transition."),TransitionKind(rawValue:String(value.dropFirst("life.transition.".count))) != nil else{return nil}
-        let point=convert(sender.draggingLocation,from:nil),row=Int((point.y-ruler)/lane)
-        guard point.y>=ruler,row>=0,row<tracks.count,tracks[row].kind != .audio,!tracks[row].isLocked else{return nil}
+        let point=convert(sender.draggingLocation,from:nil)
+        guard let row=layout.row(at:point.y,tracks:tracks),tracks[row].kind != .audio,!tracks[row].isLocked else{return nil}
         let sorted=tracks[row].clips.sorted{$0.start<$1.start}
         let pairs=Array(zip(sorted,sorted.dropFirst())).filter{$0.end==$1.start && abs(x($0.end.seconds)-point.x)<24}
         return pairs.min{abs(x($0.0.end.seconds)-point.x)<abs(x($1.0.end.seconds)-point.x)}
@@ -541,7 +651,12 @@ struct TimelineSurface: NSViewRepresentable {
         let prior=store.document;store.applyTransition(kind,left:pair.0.id,right:pair.1.id);return prior != store.document
     }
     override func keyDown(with event:NSEvent) {
+        if store.placementProposal != nil {if event.keyCode==123{store.step(-1)}else if event.keyCode==124{store.step(1)};return}
         if !event.isARepeat,store.panel == .multicam,let chars=event.charactersIgnoringModifiers,let digit=Int(chars),(1...9).contains(digit),store.visibleAngles.indices.contains(digit-1) {store.chooseAngle(store.visibleAngles[digit-1].id);return}
+        if event.modifierFlags.contains(.option),(event.keyCode==125 || event.keyCode==126) {
+            let id=layoutTrackSelection ?? tracks.first(where:{$0.clips.contains{$0.id==store.selection}})?.id ?? tracks.first?.id
+            if let id{_ = resizeTrack(id,by:event.keyCode==126 ? -16:16)};return
+        }
         if event.keyCode==51,store.currentAutomationPoint != nil {store.deleteAutomationPoint();return}
         if event.keyCode==123 {store.step(-1)} else if event.keyCode==124 {store.step(1)} else if event.keyCode==49 {store.togglePlayback()} else if event.keyCode==51 {store.deleteSelection()} else {super.keyDown(with:event)}
     }
@@ -555,4 +670,12 @@ struct TimelineSurface: NSViewRepresentable {
         let action=self.action
         return MainActor.assumeIsolated { action() }
     }
+}
+
+@MainActor private final class TimelineHeightElement:NSAccessibilityElement {
+    nonisolated let incrementAction:@MainActor @Sendable()->Bool
+    nonisolated let decrementAction:@MainActor @Sendable()->Bool
+    init(increment:@escaping @MainActor @Sendable()->Bool,decrement:@escaping @MainActor @Sendable()->Bool){incrementAction=increment;decrementAction=decrement;super.init()}
+    nonisolated override func accessibilityPerformIncrement()->Bool{let action=incrementAction;return MainActor.assumeIsolated{action()}}
+    nonisolated override func accessibilityPerformDecrement()->Bool{let action=decrementAction;return MainActor.assumeIsolated{action()}}
 }

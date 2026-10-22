@@ -10,6 +10,10 @@ enum TimelineGridMode:String {case time,frames,beats}
 @MainActor
 final class EditorStore: ObservableObject {
     @Published var document = ProjectDocument()
+    @Published var placementProposal:PlacementProposal?
+    @Published var placementTitle="Insert"
+    private var placementBaseline:ProjectDocument?
+    var timelineDocument:ProjectDocument{placementProposal?.document ?? document}
     @Published var selectedTransition:UUID?{didSet{if oldValue != selectedTransition{cancelColorSampling()}}}
     @Published var selectedIDs:Set<UUID>=[]
     @Published var selectedAutomationPoint:UUID?
@@ -103,26 +107,42 @@ final class EditorStore: ObservableObject {
         }
     }
     var selectedClip: Clip? { document.sequence.tracks.flatMap(\.clips).first { $0.id == selection } }
-    var canUndo: Bool { editor.canUndo }
-    var canRedo: Bool { editor.canRedo }
+    var canUndo: Bool { placementProposal != nil || editor.canUndo }
+    var canRedo: Bool { placementProposal == nil && editor.canRedo }
     func time(_ seconds: Double, audio: Bool = false) -> RationalTime {
         let bounded = seconds.isFinite ? min(86400,max(0,seconds)) : 0
         let raw = RationalTime(value: Int64((bounded * 48000).rounded()), timescale: 48000)
         return audio ? raw : document.sequence.settings.frameRate.quantized(raw)
     }
     func apply(_ command: EditCommand) {
-        do { if recordingPass {error="Stop the switching pass before editing clips.";return}; try editor.perform(command); changed() } catch { self.error = Self.message(error) }
+        do { if placementProposal != nil{error="Apply or cancel the placement preview first.";return};if recordingPass {error="Stop the switching pass before editing clips.";return}; try editor.perform(command); changed() } catch { self.error = Self.message(error) }
     }
     func replace(_ new: ProjectDocument) { apply(.replace(new)) }
+    func previewPlacement(_ command:EditCommand,title:String){
+        guard !recordingPass else{error="Stop the switching pass before placing clips.";return}
+        do{
+            let proposal=try SpliceEditing.proposal(for:command,in:document)
+            stopPlayback();placementBaseline=document;placementTitle=title;placementProposal=proposal
+            rebuild(preview:proposal.document,synchronization:false)
+            seek(proposal.start)
+        }catch{self.error=Self.message(error)}
+    }
+    func commitPlacement(){
+        guard let proposal=placementProposal,document==placementBaseline else{error="The project changed. Preview this placement again.";cancelPlacement();return}
+        placementProposal=nil;placementBaseline=nil
+        apply(.replace(proposal.document))
+        if !proposal.insertedClipIDs.isEmpty{selectedIDs=proposal.insertedClipIDs;selection=selectedIDs.first}
+    }
+    func cancelPlacement(){placementProposal=nil;placementBaseline=nil;rebuild()}
     func changed() {
         audioMeasurementTask?.cancel(); measuringAudio=false; audioMeasurement=nil; audioMeters=[];normalization=nil;normalizationClip=nil
         document = editor.document; dirty = true; MediaBookmarks().remember(document); scheduleRecovery(); rebuild()
     }
-    func undo() { editor.undo(); changed() }
-    func redo() { editor.redo(); changed() }
-    func rebuild(preview:ProjectDocument? = nil) {
+    func undo() { if placementProposal != nil{cancelPlacement();return};editor.undo(); changed() }
+    func redo() { if placementProposal != nil{cancelPlacement();return};editor.redo(); changed() }
+    func rebuild(preview:ProjectDocument? = nil,synchronization:Bool=true) {
         refreshCameraAudio()
-        syncPreviewing=preview != nil;previewDocument=preview
+        syncPreviewing=preview != nil && synchronization;previewDocument=preview
         if (preview ?? document).sequence.duration == .zero { refreshTask?.cancel();videoOutput=nil;cancelColorSampling(); player.replaceCurrentItem(with:nil); return }
         generation += 1; let token = generation
         refreshTask?.cancel()
@@ -368,7 +388,7 @@ final class EditorStore: ObservableObject {
     func beginGesture() { editor.beginUndoGroup() }
     func endGesture() { editor.endUndoGroup(); document = editor.document }
     func split() { if let selection { let audio=document.sequence.tracks.first(where:{$0.clips.contains(where:{$0.id == selection})})?.kind == .audio; apply(.split(clipID:selection, at:time(playhead,audio:audio))) } }
-    func deleteSelection() { if let selection { apply(.removeMany(clipIDs:selectedIDs.isEmpty ? [selection]:selectedIDs)); self.selection = nil } }
+    func deleteSelection() { guard placementProposal==nil else{error="Apply or cancel the placement preview first.";return};if let selection { apply(.removeMany(clipIDs:selectedIDs.isEmpty ? [selection]:selectedIDs)); self.selection = nil } }
     func toggleSelection(_ id:UUID){
         if selectedIDs.contains(id){selectedIDs.remove(id)}else{selectedIDs.insert(id)}
         selection=selectedIDs.contains(id) ? id:selectedIDs.first
@@ -425,7 +445,7 @@ final class EditorStore: ObservableObject {
         replace(next)
     }
     private func resetSession(){
-        autosaveError=nil;cancelColorSampling();videoOutput=nil;cameraAudioTask?.cancel();cameraAudioSignature="";cameraAudioIDs=[];checkingCameraAudio=false
+        placementProposal=nil;placementBaseline=nil;autosaveError=nil;cancelColorSampling();videoOutput=nil;cameraAudioTask?.cancel();cameraAudioSignature="";cameraAudioIDs=[];checkingCameraAudio=false
         cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
     }
     func newProject() {

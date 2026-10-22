@@ -50,10 +50,11 @@ struct WorkspaceView: View {
         .sheet(isPresented:$store.showExport){ExportSheet(store:store)}
         .alert("Life Editor",isPresented:Binding(get:{store.error != nil},set:{if !$0 {store.error=nil}})) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
         .onAppear { store.safeAreas = UserDefaults.standard.bool(forKey:"showSafeAreaDefault") }
+        .onExitCommand{if store.placementProposal != nil{store.cancelPlacement()}else{store.cancelColorSampling()}}
     }
     private var toolbar: some View {
         HStack(spacing:10) {
-            icon("square.and.arrow.down", "Import · ⌘I", action:store.importMedia)
+            icon("square.and.arrow.down", "Import · ⌘I", action:store.importMedia).disabled(store.placementProposal != nil)
             Divider().frame(height:18)
             icon("rectangle.stack", "Media", selected:store.panel == .media) { toggle(.media) }
             icon("textformat", "Title", action:store.addTitle)
@@ -119,6 +120,8 @@ struct WorkspaceView: View {
             HStack(spacing:8) {
                 icon("scissors", "Split · ⌘B", action:store.split).disabled(store.selection == nil)
                 icon("trash", "Delete · ⌫", action:store.deleteSelection).disabled(store.selection == nil)
+                icon("rectangle.badge.plus","Insert copies · ⇧⌘I"){store.previewPlacement(.insertCopies(clipIDs:store.selectedIDs,at:store.playheadTime),title:"Insert")}.disabled(store.selectedIDs.isEmpty || store.placementProposal != nil)
+                icon("rectangle.fill.on.rectangle.fill","Overwrite copies · ⇧⌘O"){store.previewPlacement(.overwriteCopies(clipIDs:store.selectedIDs,at:store.playheadTime),title:"Overwrite")}.disabled(store.selectedIDs.isEmpty || store.placementProposal != nil)
                 icon("bookmark", "Marker · M", action:store.addMarker)
                 Divider().frame(height:18)
                 Button {store.snapping.toggle()} label: {MagnetIcon().stroke(lineWidth:1.8).frame(width:15,height:17).padding(8).background(store.snapping ? accent.opacity(0.2):.clear,in:RoundedRectangle(cornerRadius:5))}.buttonStyle(.plain).help("Snapping · N").accessibilityLabel("Snapping").accessibilityValue(store.snapping ? "On":"Off")
@@ -128,6 +131,7 @@ struct WorkspaceView: View {
                     Button("Frames"){store.gridMode = .frames}
                     Button("Beats"){store.setGrid{_ in}}
                 } label: {Image(systemName:"grid").frame(width:30,height:30)}.menuStyle(.borderlessButton).fixedSize().help("Grid").accessibilityLabel("Grid")
+                PlacementPreviewControls(store:store)
                 Spacer()
                 icon("minus.magnifyingglass", "Zoom out") { store.pixelsPerSecond = max(4,store.pixelsPerSecond/1.4) }
                 Slider(value:Binding(get:{log2(store.pixelsPerSecond)},set:{store.pixelsPerSecond=pow(2,$0)}),in:2...17).frame(width:100).accessibilityLabel("Timeline zoom")

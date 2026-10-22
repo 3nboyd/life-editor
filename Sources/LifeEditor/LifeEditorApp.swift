@@ -51,6 +51,8 @@ struct LifeEditorApp: App {
             CommandMenu("Clip") {
                 Button("Import…") { store.importMedia() }.keyboardShortcut("i")
                 Button("Split") { store.split() }.keyboardShortcut("b")
+                Button("Insert Copies"){store.previewPlacement(.insertCopies(clipIDs:store.selectedIDs,at:store.playheadTime),title:"Insert")}.keyboardShortcut("i",modifiers:[.command,.shift]).disabled(store.selectedIDs.isEmpty)
+                Button("Overwrite Copies"){store.previewPlacement(.overwriteCopies(clipIDs:store.selectedIDs,at:store.playheadTime),title:"Overwrite")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(store.selectedIDs.isEmpty)
                 Button("Group"){store.apply(.group(clipIDs:store.selectedIDs))}.keyboardShortcut("g").disabled(store.selectedIDs.count<2)
                 Button("Ungroup"){store.apply(.ungroup(clipIDs:store.selectedIDs))}.keyboardShortcut("g",modifiers:[.command,.shift])
                 Button("Detach Audio"){store.detachAudio()}
