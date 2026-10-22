@@ -223,21 +223,7 @@ struct WorkspaceView: View {
                     }.textFieldStyle(.roundedBorder).disabled(store.playing)
                 }
                 Toggle(isOn:$store.switchArmed){Label("Record switches",systemImage:store.switchArmed ? "record.circle.fill":"record.circle")}.toggleStyle(.button).help("Arm camera switching · 1–9")
-                HStack{
-                    if store.synchronizing {ProgressView().controlSize(.small);Button("Cancel"){store.cancelSynchronization()}}
-                    else {Button("Waveform Sync"){store.synchronizeCameras()}}
-                }
-                ForEach($store.syncCandidates){$candidate in
-                    HStack{
-                        Text(store.document.assets.first(where:{$0.id==candidate.assetID})?.url.lastPathComponent ?? "Camera").lineLimit(1)
-                        TextField("Offset",value:$candidate.offset,format:.number.precision(.fractionLength(3))).textFieldStyle(.roundedBorder).frame(width:66).accessibilityLabel("Camera offset in seconds")
-                        Text(String(format:"%.0f%%",candidate.confidence*100)).font(.caption.monospacedDigit()).foregroundStyle(candidate.confidence<0.6 ? .orange:.secondary)
-                    }
-                    if let drift=candidate.drift {Text(String(format:"Drift %+.0f ms",drift*1000)).font(.caption).foregroundStyle(.orange)}
-                }
-                if !store.syncCandidates.isEmpty {
-                    HStack{Button("Preview"){store.previewSynchronization()};Button("Apply"){store.applySynchronization()};Button("Cancel"){store.syncCandidates=[];store.cancelSynchronization()}}
-                }
+                CameraSynchronizationControls(store:store)
                 Picker("Master",selection:Binding(get:{group.masterAudioAssetID},set:{id in var next=store.document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].masterAudioAssetID=id;if let id{var associated=next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].audioAssetIDs ?? [];if !associated.contains(id){associated.append(id)};next.sequence.multicamGroups[next.sequence.multicamGroups.count-1].audioAssetIDs=associated};store.replace(next)})){
                     ForEach(store.document.assets.filter{store.cameraAudioIDs.contains($0.id)}){asset in Text(asset.url.lastPathComponent).tag(Optional(asset.id))}
                 }
