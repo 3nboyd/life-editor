@@ -30,7 +30,7 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 - Complete timecode synchronization, drift correction preview and richer direct
   cut refinement.
-- Insert/overwrite, contextual roll/slip/ripple trims, complete track controls,
+- Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse/freeze and speed ramps.
 - Adjustment layers and advanced color controls; complete social text animation,
@@ -60,4 +60,15 @@ Latest integrated additions: native-rate multiresolution per-channel waveforms,
 exact visible sample windows, separate video/audio/both switching with live audition,
 range replacement in either decision lane, stable cut IDs and numeric cut refinement.
 Forward/backward NTSC stepping now preserves an exact rational transport clock.
-Local full native/helper verification:118 tests pass; optimized ad-hoc app build passes.
+Insert/overwrite and ripple trim now produce an explicit candidate timeline before
+Apply; undo restores the exact original document. Unsupported multicam splices and
+ambiguous cross-track relationships are rejected. Real filmstrips use bounded
+thumbnail jobs, and per-track heights persist locally with keyboard/VoiceOver controls.
+Native timecode reading validates 32/64-bit tracks, rational clocks, drop-frame flags
+and day rollover; synchronization UI integration is in progress. Oriented still images
+retain their display geometry while thumbnails decode at bounded size. Waveforms
+remain available in memory if the disposable disk cache cannot be written.
+
+Local full native/helper verification:134 tests pass, plus the targeted cache-storage
+failure test. Optimized ad-hoc app build passes. These measurements are from the local
+M4 and do not establish the M1 performance targets.
