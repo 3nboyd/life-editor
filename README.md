@@ -25,23 +25,34 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 
 ## Current editing paths
 
+### Editing
+
 - Layered video/audio/still import, playback, scrubbing and frame stepping.
 - Move/trim/split/duplicate/delete/ripple-delete with source/overlap protection.
 - Multi-selection, linked/group moves, clipboard and editable vector drawings/shapes.
+- Marker notes/ranges/colors and clip-source anchoring with trim/retime mapping.
+- Crop, position, scale, rotation, flips and non-exported safe-area guides.
+- Cached per-channel waveforms with exact source-rate sample detail when zoomed in.
+- Debounced autosave, recent projects, duplicate and confirmed revert.
+
+### Titles and effects
+
 - Fourteen source-handle-safe transitions with timeline duration handles.
 - Direct volume/opacity points, shared fades, curves, constant speed and pitch lock.
 - Editable multiline titles, six entrances, colors/backgrounds/outlines and viewer handles.
 - Shared color wheel, RGB/HEX, swatches and viewer sampling.
-- Marker notes/ranges/colors and clip-source anchoring with trim/retime mapping.
 - Sixteen original visual looks, sixteen adjustments and real media thumbnails.
-- Crop, position, scale, rotation, flips and non-exported safe-area guides.
+
+### Audio and multicam
+
 - Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
 - Gain/pan/channel mapping/EQ, optional limiter and calibrated loudness measurement.
 - Multicam groups, four proxy previews, waveform alignment candidates and manual offsets.
 - Continuous master audio by default; video/audio/both cuts, range replacement and audition.
-- Cached per-channel waveforms with exact source-rate sample detail when zoomed in.
+
+### Export and project recovery
+
 - SRT import/export and timed captions; portable collected packages and recovery.
-- Debounced autosave, recent projects, duplicate and confirmed revert.
 - H.264/HEVC/ProRes/WAV/AIFF/M4A export, ranges, progress and cancellation.
 
 Every export consumes a snapshot and the same compositor as preview. Rational
