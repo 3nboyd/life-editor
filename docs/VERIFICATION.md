@@ -1,4 +1,4 @@
-# Verification — 2026-10-21
+# Verification: 2026-10-21
 
 Host: macOS15.6, Apple M4,16GB; Swift6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.

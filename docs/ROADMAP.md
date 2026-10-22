@@ -4,7 +4,7 @@ Status: **planned** unless marked otherwise. A model field or a control alone do
 not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
-## Phase 0 — foundation gate
+## Phase 0: foundation gate
 
 - [x] Native Swift 6/macOS 15/Apple Silicon app, modular document/commands/timeline/media/renderer/audio/analysis/export boundaries.
 - [x] Real import → layered edit → save/reopen → export vertical slice.
@@ -16,7 +16,7 @@ Technical gate verified with the combined native media workflow and M4 baseline.
 This does not establish M1 targets or musician/student usability; those remain
 explicit release-quality gates.
 
-## Phase 1 — everyday editing
+## Phase 1: everyday editing
 
 - [ ] Dominant viewer (initial 2:1 height), collapsible contextual panel/full-width timeline; remembered resizable layout; 1280×800 validation; focus shortcut.
 - [ ] Quiet charcoal UI, SF Symbols/custom edit icons, visual preset thumbnails; no explanatory panel prose; tooltips/shortcuts/accessibility names/focus/large targets; non-color states; Reduce Motion gear.
@@ -45,7 +45,7 @@ explicit release-quality gates.
 
 Gate: short video with music, cuts, fades and overlays reopens and reproduces export.
 
-## Phase 2 — music and multicam
+## Phase 2: music and multicam
 
 - [ ] Accelerate onset/tempo detection/confidence, cancellable background work.
 - [ ] Manual BPM/tap/downbeat/signature, edit beats/offset/half-double/subdivisions/triplets/swing, tempo changes/live drift anchors; moving grid distinct from stretching audio.
@@ -58,7 +58,7 @@ Gate: short video with music, cuts, fades and overlays reopens and reproduces ex
 
 Gate: four cameras + separate audio, switching pass/refinement/export with continuous master audio.
 
-## Phase 3 — creator toolkit
+## Phase 3: creator toolkit
 
 - [ ] Effects browser Transitions/Filters/Adjust and contextual audio; live thumbnails/drag/intensity-duration/favorites/bypass/reset/copy-paste; stable registry/defaults/animation/render bindings.
 - [ ] Boundary transitions with source handles/visible duration limits/explicit freeze: dissolve, black/white fade, dip color, push/slide/wipe, zoom/blur, whip/shake, glitch/RGB, flash/light leak. No silent timing changes.
@@ -76,7 +76,7 @@ Gate: four cameras + separate audio, switching pass/refinement/export with conti
 
 Gate: every creative feature previews, saves, undoes and exports correctly.
 
-## Phase 4 — release
+## Phase 4: release
 
 - [ ] VoiceOver/full keyboard/Reduce Motion/accessibility and 1280×800 audit.
 - [ ] New-user musician/student usability sessions before claiming intuitive UI.
