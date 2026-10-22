@@ -59,10 +59,9 @@ Every export consumes a snapshot and the same compositor as preview. Rational
 project times retain sample/frame precision. Normal moves preserve gaps; a
 same-track collision is rejected instead of silently overwriting material.
 
-This list describes implemented paths, **not completion of all acceptance gates**.
-Full music-performance, social-video and student-project workflows still require
-completion and validation. See [status](docs/STATUS.md), [verification](docs/VERIFICATION.md)
-and the [complete requirement register](docs/ROADMAP.md).
+These features are implemented, with broader workflow and usability testing still
+in progress. See the [development status](docs/STATUS.md),
+[test results](docs/VERIFICATION.md), and [roadmap](docs/ROADMAP.md).
 
 ## Tests
 
