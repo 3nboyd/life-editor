@@ -183,9 +183,11 @@ struct WorkspaceView: View {
                     Text("Start").foregroundStyle(.secondary)
                     TextField("Seconds",value:Binding(get:{store.selectedClip?.start.seconds ?? 0},set:{v in store.setClipStart(v)}),format:.number.precision(.fractionLength(5))).textFieldStyle(.roundedBorder).accessibilityLabel("Clip start in seconds")
                 }
-                VisualControls(store:store)
+                if !store.selectedIsAdjustment{VisualControls(store:store)}
                 TrackControls(store:store)
-                EditControls(store:store)
+                if store.selectedIsAdjustment{
+                    HStack{Text("Duration");TextField("Seconds",value:Binding(get:{store.selectedClip?.duration.seconds ?? 0},set:{store.setAdjustmentDuration($0)}),format:.number.precision(.fractionLength(3))).textFieldStyle(.roundedBorder).accessibilityLabel("Adjustment layer duration seconds")}
+                }else{EditControls(store:store)}
                 Text(String(format:"%.3f s",clip.duration.seconds)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }}
             }

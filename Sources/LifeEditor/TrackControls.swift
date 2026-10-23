@@ -14,7 +14,7 @@ struct TrackControls:View {
                         Button{store.apply(.reorderTrack(trackID:track.id,to:index+1))}label:{Image(systemName:"arrow.up")}.disabled(index==store.document.sequence.tracks.count-1 || track.isLocked).help("Move track up").accessibilityLabel("Move track up")
                         Button{store.apply(.reorderTrack(trackID:track.id,to:index-1))}label:{Image(systemName:"arrow.down")}.disabled(index==0 || track.isLocked).help("Move track down").accessibilityLabel("Move track down")
                         Spacer()
-                        Button{store.toggleTrack(track.id,property:"mute")}label:{Image(systemName:track.isMuted ? "speaker.slash.fill":"speaker.wave.2")}.help("Mute track").accessibilityLabel(track.isMuted ? "Unmute track":"Mute track")
+                        if track.kind != .adjustment{Button{store.toggleTrack(track.id,property:"mute")}label:{Image(systemName:track.isMuted ? "speaker.slash.fill":"speaker.wave.2")}.help("Mute track").accessibilityLabel(track.isMuted ? "Unmute track":"Mute track")}
                         Button{store.toggleTrack(track.id,property:"hide")}label:{Image(systemName:track.isHidden ? "eye.slash":"eye")}.help("Hide track").accessibilityLabel(track.isHidden ? "Show track":"Hide track")
                         Button{store.toggleTrack(track.id,property:"lock")}label:{Image(systemName:track.isLocked ? "lock.fill":"lock.open")}.help("Lock track").accessibilityLabel(track.isLocked ? "Unlock track":"Lock track")
                     }

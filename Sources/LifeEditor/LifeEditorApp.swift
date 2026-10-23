@@ -56,7 +56,7 @@ struct LifeEditorApp: App {
                 Button("Group"){store.apply(.group(clipIDs:store.selectedIDs))}.keyboardShortcut("g").disabled(store.selectedIDs.count<2)
                 Button("Ungroup"){store.apply(.ungroup(clipIDs:store.selectedIDs))}.keyboardShortcut("g",modifiers:[.command,.shift])
                 Button("Detach Audio"){store.detachAudio()}
-                Button("Link"){store.apply(.link(clipIDs:store.selectedIDs))}.disabled(store.selectedIDs.count<2)
+                Button("Link"){store.apply(.link(clipIDs:store.selectedIDs))}.disabled(store.selectedIDs.count<2 || store.selectionIncludesAdjustment)
                 Button("Unlink"){store.apply(.detach(clipIDs:store.selectedIDs))}
                 Button("Duplicate"){if let clip=store.selectedClip {store.apply(.duplicate(clipID:clip.id,to:clip.end))}}.keyboardShortcut("d")
                 Button("Ripple Delete"){if let id=store.selection {store.apply(.rippleDelete(clipID:id))}}.keyboardShortcut(.delete,modifiers:[.shift])

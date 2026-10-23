@@ -356,6 +356,7 @@ final class EditorStore: ObservableObject {
         }
     }
     var selectedUsesOpacity:Bool {
+        if selectedIsAdjustment{return true}
         guard let clip=selectedClip else{return false}
         return clip.title != nil || clip.graphic != nil || document.assets.first(where:{$0.id==clip.assetID})?.kind == .image
     }

@@ -37,9 +37,9 @@ struct AutomationControls:View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:9){
-            Picker("Automation",selection:Binding(get:{store.automationLane},set:{store.automationLane=$0;store.selectedAutomationPoint=nil;refresh()})){
+            if store.selectedIsAdjustment{Text("Opacity").font(.caption).foregroundStyle(.secondary)}else{Picker("Automation",selection:Binding(get:{store.automationLane},set:{store.automationLane=$0;store.selectedAutomationPoint=nil;refresh()})){
                 ForEach(AutomationLane.allCases,id:\.self){Text($0.label).tag($0)}
-            }.pickerStyle(.segmented).accessibilityLabel("Automation lane")
+            }.pickerStyle(.segmented).accessibilityLabel("Automation lane")}
             HStack{
                 Text(store.automationLane == .volume ? "dB":"%")
                 TextField("Level",text:$baseText).textFieldStyle(.roundedBorder).onSubmit{commit(baseText,point:false)}.accessibilityLabel("Overall \(store.automationLane.label.lowercased())")
@@ -70,6 +70,6 @@ struct AutomationControls:View {
                     Text("Linear").tag(Interpolation.linear);Text("Ease").tag(Interpolation.eased);Text("Hold").tag(Interpolation.hold)
                 }.pickerStyle(.segmented).accessibilityLabel("Automation curve after selected point")
             }
-        }.font(.system(size:12)).onAppear(perform:refresh).onChange(of:store.selection){refresh()}.onChange(of:store.automationLane){refresh()}.onChange(of:store.selectedAutomationPoint){refresh()}.onChange(of:store.currentAutomationEnvelope){refresh()}
+        }.font(.system(size:12)).onAppear{if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.selection){if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.automationLane){refresh()}.onChange(of:store.selectedAutomationPoint){refresh()}.onChange(of:store.currentAutomationEnvelope){refresh()}
     }
 }
