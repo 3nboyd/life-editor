@@ -65,7 +65,7 @@ Gate: four cameras + separate audio, switching pass/refinement/export with conti
 - [ ] Original strength-controlled grayscale/high-contrast, LA/desert/clean/vivid/portrait/cool/cinematic/golden-hour/faded-film/Y2K/VHS/disposable/neon/pastel presets; deterministic grain/flicker.
 - [ ] Camcorder date/time overlay format/position/visibility; reliable recorded date or user input, never silent today.
 - [ ] Exposure/brightness/contrast/highlights/shadows/whites/blacks/saturation/vibrance/temperature/tint/hue/local tone/glow/sharpen/clarity/denoise/vignette/grain/WB eyedropper; advanced RGB curves/levels/HSL.
-- [ ] Timed adjustment layers affect lower visual tracks.
+- [x] Timed adjustment layers affect lower visual tracks.
 - [ ] Plain/bold/condensed/serif/handwritten/outline/neon/typewriter text; solid/translucent/square/rounded/pill/bubble backgrounds; all typography/padding/border/shadow/opacity/alignment controls.
 - [ ] Fade/slide/pop/scale/bounce/typewriter/word-highlight; titles/lower-thirds/labels/lyrics/captions; emoji/imported stickers; editable rectangles/rounded/circle/line/arrow.
 - [ ] Viewer select/transform/crop handles, double-click text, contextual alignment; keyboard drag alternatives; timed/keyframed text/shapes/stickers/drawings.
