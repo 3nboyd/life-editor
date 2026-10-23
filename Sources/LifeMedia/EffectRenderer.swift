@@ -11,6 +11,26 @@ enum EffectRenderer {
             return vec4(clamp(s.rgb + vec3(n * amount * s.a), 0.0, s.a), s.a);
         }
         """))
+    // Original SDR tonal operators in the renderer's linear working space.
+    // The neighborhood is edge-clamped before blurring; alpha is never changed.
+    private static let tonal=ImmutableColorKernel(CIColorKernel(source:"""
+        kernel vec4 lifeTonal(__sample s, __sample neighborhood, float value, float mode) {
+            vec3 rgb = s.a > 0.000001 ? s.rgb / s.a : vec3(0.0);
+            float y = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+            float delta = 0.0;
+            if (mode < 0.5) {
+                delta = value * 0.2 * smoothstep(0.45, 1.0, y);
+            } else if (mode < 1.5) {
+                delta = -value * 0.2 * (1.0 - smoothstep(0.0, 0.6, y));
+            } else {
+                vec3 localRGB = neighborhood.a > 0.000001 ? neighborhood.rgb / neighborhood.a : vec3(0.0);
+                float mean = dot(localRGB, vec3(0.2126, 0.7152, 0.0722));
+                float middle = 1.0 - abs(2.0 * clamp(y, 0.0, 1.0) - 1.0);
+                delta = value * (0.16 * (1.0 - 2.0 * y) * middle + 0.4 * (y - mean));
+            }
+            return vec4(clamp(rgb + vec3(delta), 0.0, 1.0) * s.a, s.a);
+        }
+        """))
     static func apply(_ effects: [EffectInstance], to original: CIImage, time: RationalTime = .zero) -> CIImage {
         effects.filter(\.isEnabled).reduce(original) { input, effect in
             let strength = max(0, min(1, effect.strength))
@@ -38,6 +58,12 @@ enum EffectRenderer {
                 case "contrast": controls(1, 0, value)
                 case "highlights": image = image.applyingFilter("CIHighlightShadowAdjust", parameters: ["inputHighlightAmount": value])
                 case "shadows": image = image.applyingFilter("CIHighlightShadowAdjust", parameters: ["inputShadowAmount": value])
+                case "whites", "blackPoint", "brilliance":
+                    guard value != 0 else{return input}
+                    let mode=key == "whites" ? 0.0:(key == "blackPoint" ? 1.0:2.0)
+                    let radius=max(1,min(96,min(image.extent.width,image.extent.height)*0.015))
+                    let neighborhood=key == "brilliance" ? image.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:["inputRadius":radius]).cropped(to:image.extent):image
+                    image=tonal.value?.apply(extent:image.extent,arguments:[image,neighborhood,value,mode]) ?? image
                 case "saturation": controls(value)
                 case "vibrance": image = image.applyingFilter("CIVibrance", parameters: ["inputAmount": value])
                 case "temperature": warmth(6500 + value)

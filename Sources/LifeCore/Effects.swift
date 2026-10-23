@@ -39,7 +39,8 @@ public enum NativeEffectRegistry {
     }
     public static let adjustments: [EffectDefinition] = [
         ("exposure","Exposure",-4.0,4.0,0.0),("brightness","Brightness",-1,1,0),("contrast","Contrast",0,2,1),
-        ("highlights","Highlights",0,2,1),("shadows","Shadows",-1,1,0),("saturation","Saturation",0,2,1),
+        ("highlights","Highlights",0,2,1),("shadows","Shadows",-1,1,0),
+        ("whites","Whites",-1,1,0),("blackPoint","Black Point",-1,1,0),("brilliance","Brilliance",-1,1,0),("saturation","Saturation",0,2,1),
         ("vibrance","Vibrance",-1,1,0),("temperature","Temperature",-2000,2000,0),("tint","Tint",-100,100,0),
         ("hue","Hue",-180,180,0),("bloom","Bloom",0,1,0),("sharpen","Sharpen",0,2,0),
         ("clarity","Clarity",0,2,0),("noiseReduction","Noise Reduction",0,1,0),("vignette","Vignette",0,2,0),("grain","Grain",0,1,0)
