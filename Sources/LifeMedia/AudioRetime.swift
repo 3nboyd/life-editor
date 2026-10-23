@@ -29,21 +29,30 @@ enum AudioRetime {
         reader.timeRange = CMTimeRange(start: clip.sourceStart.cmTime,
             duration: CMTime(seconds: clip.duration.seconds * clip.speed, preferredTimescale: 48000))
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? MediaError.exportUnavailable }
-        while let sample = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sample) {
-            try Task.checkCancellation()
-            let frames = CMSampleBufferGetNumSamples(sample)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)) else { throw MediaError.exportUnavailable }
-            buffer.frameLength = AVAudioFrameCount(frames)
-            var bytes = [Float](repeating: 0, count: frames * 2)
-            _ = bytes.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
-            for frame in 0..<frames {
-                buffer.floatChannelData![0][frame] = bytes[frame * 2]
-                buffer.floatChannelData![1][frame] = bytes[frame * 2 + 1]
-            }
-            try sourceFile!.write(from: buffer)
+        let io = BlockingAssetReader(reader: reader, output: output, label: "life.audio-retime.reader")
+        do {
+            try await withTaskCancellationHandler {
+                try await io.start()
+                while let sample = try await io.next().buffer, let block = CMSampleBufferGetDataBuffer(sample) {
+                    try Task.checkCancellation()
+                    let frames = CMSampleBufferGetNumSamples(sample)
+                    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)) else { throw MediaError.exportUnavailable }
+                    buffer.frameLength = AVAudioFrameCount(frames)
+                    var bytes = [Float](repeating: 0, count: frames * 2)
+                    _ = bytes.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
+                    for frame in 0..<frames {
+                        buffer.floatChannelData![0][frame] = bytes[frame * 2]
+                        buffer.floatChannelData![1][frame] = bytes[frame * 2 + 1]
+                    }
+                    try sourceFile!.write(from: buffer)
+                }
+                try await io.requireCompleted()
+            } onCancel: { io.cancel() }
+        } catch {
+            await io.cancelAndWait()
+            throw error
         }
-        guard reader.status == .completed else { throw reader.error ?? MediaError.exportUnavailable }
+        await io.cancelAndWait()
         sourceFile = nil
         // Close the writer before scheduling its finalized PCM frames.
         let input = try AVAudioFile(forReading: sourceURL)

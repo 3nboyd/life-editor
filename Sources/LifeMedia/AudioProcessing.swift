@@ -49,7 +49,7 @@ enum AudioProcessing {
         output.alwaysCopiesSampleData = false
         reader.timeRange = CMTimeRange(start: start, duration: clip.duration.cmTime)
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? MediaError.exportUnavailable }
+        let io = BlockingAssetReader(reader: reader, output: output, label: "life.audio-processing.reader")
         let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2)!
         var file: AVAudioFile? = try AVAudioFile(forWriting: temporary, settings: format.settings.merging([AVLinearPCMIsNonInterleaved: false]) { _, new in new })
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096)!
@@ -76,25 +76,32 @@ enum AudioProcessing {
             index += 1
         }
         do {
-            while index < wanted, let sample = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sample) {
+            return try await withTaskCancellationHandler {
+                try await io.start()
+                while index < wanted, let sample = try await io.next().buffer, let block = CMSampleBufferGetDataBuffer(sample) {
+                    try Task.checkCancellation()
+                    let frames = CMSampleBufferGetNumSamples(sample)
+                    var samples = [Float](repeating: 0, count: frames * 2)
+                    let status = samples.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
+                    guard status == kCMBlockBufferNoErr else { throw MediaError.exportUnavailable }
+                    for frame in 0..<min(frames, Int(wanted - index)) { try process(Double(samples[frame * 2]), Double(samples[frame * 2 + 1])) }
+                }
+                if reader.status == .failed { throw reader.error ?? MediaError.exportUnavailable }
+                // The requested frame count can end before the reader reaches EOF.
+                // Stop it off the cooperative executor before releasing its source lease.
+                await io.cancelAndWait()
                 try Task.checkCancellation()
-                let frames = CMSampleBufferGetNumSamples(sample)
-                var samples = [Float](repeating: 0, count: frames * 2)
-                let status = samples.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
-                guard status == kCMBlockBufferNoErr else { throw MediaError.exportUnavailable }
-                for frame in 0..<min(frames, Int(wanted - index)) { try process(Double(samples[frame * 2]), Double(samples[frame * 2 + 1])) }
-            }
-            if reader.status == .failed { throw reader.error ?? MediaError.exportUnavailable }
-            while index < wanted { try Task.checkCancellation(); try process(0, 0) }
-            if settings.limiterEnabled {
-                for _ in 0..<LookaheadLimiter.lookahead { if let sample = limiter.push(.zero) { try write(sample) } }
-            }
-            if buffered > 0 { buffer.frameLength = AVAudioFrameCount(buffered); try file!.write(from: buffer) }
-            file = nil
-            if FileManager.default.fileExists(atPath: cached.path) { try? FileManager.default.removeItem(at: temporary) }
-            else { try FileManager.default.moveItem(at: temporary, to: cached) }
-            return .init(url: cached, envelope: envelope)
-        } catch { reader.cancelReading(); throw error }
+                while index < wanted { try Task.checkCancellation(); try process(0, 0) }
+                if settings.limiterEnabled {
+                    for _ in 0..<LookaheadLimiter.lookahead { if let sample = limiter.push(.zero) { try write(sample) } }
+                }
+                if buffered > 0 { buffer.frameLength = AVAudioFrameCount(buffered); try file!.write(from: buffer) }
+                file = nil
+                if FileManager.default.fileExists(atPath: cached.path) { try? FileManager.default.removeItem(at: temporary) }
+                else { try FileManager.default.moveItem(at: temporary, to: cached) }
+                return .init(url: cached, envelope: envelope)
+            } onCancel: { io.cancel() }
+        } catch { await io.cancelAndWait(); throw error }
     }
 }
 
