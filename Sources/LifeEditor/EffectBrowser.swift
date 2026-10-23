@@ -46,6 +46,7 @@ struct EffectBrowser:View {
                 if let effect=store.selectedClip?.effects?.first(where:{$0.stableID.hasPrefix("life.filter.")}){
                     HStack{Text("Strength");Slider(value:Binding(get:{store.selectedClip?.effects?.first(where:{$0.id==effect.id})?.strength ?? 1},set:{value in store.editSelected{clip in if let i=clip.effects?.firstIndex(where:{$0.id==effect.id}){clip.effects?[i].strength=value}}}),in:0...1,onEditingChanged:{active in if active{store.beginGesture()}else{store.endGesture()}}).accessibilityLabel("Filter strength")}
                     HStack{
+                        if effect.stableID == "life.filter.VHS",let asset{CamcorderDateControls(store:store,effectID:effect.id,asset:asset)}
                         Toggle("Bypass",isOn:Binding(get:{!(store.selectedClip?.effects?.first(where:{$0.id==effect.id})?.isEnabled ?? true)},set:{value in store.editSelected{clip in if let i=clip.effects?.firstIndex(where:{$0.id==effect.id}){clip.effects?[i].isEnabled = !value}}})).toggleStyle(.button)
                         Spacer();Button("Reset"){store.editSelected{$0.effects?.removeAll{$0.stableID.hasPrefix("life.filter.")}}}
                     }
@@ -85,8 +86,9 @@ struct EffectBrowser:View {
             .onAppear{if store.selectedIsAdjustment{category=1}else if store.selectedTransition != nil{category=2}}
             .onChange(of:store.selectedTransition){_,id in if id != nil,!store.selectedIsAdjustment{category=2}}
             .onChange(of:store.selection){_,_ in if store.selectedIsAdjustment,category==2{category=1}}
-            .task(id:"\(store.selection?.uuidString ?? "")|\((asset?.preparedURL ?? asset?.url)?.absoluteString ?? "chart")|\(store.selectedClip?.sourceStart.seconds ?? 0)"){await loadThumbnails()}
+            .task(id:"\(store.selection?.uuidString ?? "")|\((asset?.preparedURL ?? asset?.url)?.absoluteString ?? "chart")|\(store.selectedClip?.sourceStart.seconds ?? 0)|\(datePreviewIdentity)"){await loadThumbnails()}
     }
+    private var datePreviewIdentity:String{guard let effects=store.selectedClip?.effects,let data=try? JSONEncoder().encode(effects.filter{$0.stableID == "life.filter.VHS"}) else{return ""};return data.base64EncodedString()}
     private var sortedDefinitions:[EffectDefinition]{NativeEffectRegistry.definitions.sorted{isFavorite($0.stableID) && !isFavorite($1.stableID)}}
     private func isFavorite(_ id:String)->Bool{favorites.split(separator:",").contains(Substring(id))}
     private func toggleFavorite(_ id:String){var all=Set(favorites.split(separator:",").map(String.init));if all.contains(id){all.remove(id)}else{all.insert(id)};favorites=all.sorted().joined(separator:",")}
@@ -101,7 +103,7 @@ struct EffectBrowser:View {
         for definition in NativeEffectRegistry.definitions {
             guard !Task.isCancelled else{return}
             do{
-                let effects=[NativeEffectRegistry.make(definition.stableID,seed:17)]
+                let effects=[store.selectedClip?.effects?.first(where:{$0.stableID==definition.stableID}) ?? NativeEffectRegistry.make(definition.stableID,seed:17)]
                 let image:CGImage
                 if let asset{image=try await pipeline.thumbnail(asset:asset,at:max(.zero,sourceTime),effects:effects)}
                 else{image=try await EffectThumbnails.shared.image(effects:effects)}
