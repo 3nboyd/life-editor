@@ -9,6 +9,7 @@ struct CameraSynchronizationControls:View {
                 if store.synchronizing{ProgressView().controlSize(.small);Button{store.cancelSynchronization()}label:{Image(systemName:"xmark")}.help("Cancel synchronization").accessibilityLabel("Cancel synchronization")}
                 else{Button{store.synchronizeCameras()}label:{Image(systemName:"arrow.triangle.2.circlepath")}.help("Analyze synchronization").accessibilityLabel("Analyze synchronization")}
             }
+            MarkerSynchronizationControls(store:store)
             if let reference=store.syncReferenceID,let asset=store.document.assets.first(where:{$0.id==reference}){
                 Label(asset.url.lastPathComponent,systemImage:"pin.fill").font(.caption).lineLimit(1).help("Synchronization reference")
             }
