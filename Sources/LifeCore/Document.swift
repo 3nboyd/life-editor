@@ -105,7 +105,7 @@ public struct Sequence: Codable, Equatable, Sendable {
     public var duration: RationalTime { tracks.flatMap(\.clips).map(\.end).max() ?? .zero }
 }
 public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
-    public static let currentVersion = 2
+    public static let currentVersion = 3
     public var version: Int; public var id: UUID; public var name: String; public var sequence: Sequence; public var assets: [MediaAsset]
     public init(id: UUID = UUID(), name: String = "Untitled", sequence: Sequence = .init(), assets: [MediaAsset] = []) { self.version=Self.currentVersion; self.id=id; self.name=name; self.sequence=sequence; self.assets=assets }
     public static func decode(_ data: Data) throws -> Self {

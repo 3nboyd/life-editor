@@ -30,9 +30,9 @@ private let legacyProject=Data(#"""
 @Test func migrationPreservesLiteralLegacyMediaTimingAnnotationsAndAutomation()throws {
     let legacy=try JSONDecoder().decode(ProjectDocument.self,from:legacyProject)
     #expect(legacy.version==1)
-    var expected=legacy;expected.version=2
+    var expected=legacy;expected.version=ProjectDocument.currentVersion
     let migrated=try ProjectDocument.decode(legacyProject)
-    #expect(migrated==expected);#expect(ProjectDocument().version==2)
+    #expect(migrated==expected);#expect(ProjectDocument().version==3)
     #expect(migrated.sequence.settings.frameRate==FrameRate(numerator:30000,denominator:1001))
     #expect(migrated.sequence.tracks[1].clips[0].start==RationalTime(value:1,timescale:48000))
     #expect(migrated.sequence.tracks[0].clips[0].volume.points[0].time==RationalTime(value:1,timescale:48000))
@@ -44,7 +44,7 @@ private let legacyProject=Data(#"""
     try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true);try legacyProject.write(to:directory.appendingPathComponent(ProjectPackage.projectFilename))
     let loaded=try ProjectPackage.read(from:directory);#expect(loaded==migrated)
     try ProjectPackage.write(loaded,to:directory);#expect(try ProjectPackage.read(from:directory)==migrated)
-    #expect(try ProjectMigration.headerVersion(in:Data(contentsOf:directory.appendingPathComponent(ProjectPackage.projectFilename)))==2)
+    #expect(try ProjectMigration.headerVersion(in:Data(contentsOf:directory.appendingPathComponent(ProjectPackage.projectFilename)))==ProjectDocument.currentVersion)
 }
 @Test func migrationRejectsUnknownFutureStructureBeforeModelDecodeAndNeverOverwrites()throws {
     let data=Data(#"{"version":999,"sequence":"future encoding","assets":{"unrecognized":true},"opaque":"preserve me"}"#.utf8)
@@ -71,4 +71,31 @@ private let legacyProject=Data(#"""
     #expect(try Data(contentsOf:future)==data)
     #expect(try FileManager.default.contentsOfDirectory(atPath:directory.path).count==2)
     #expect(try ProjectPackage.recoverLatest(in:directory)==current)
+}
+
+private let schemaTwoAdjustment=Data(#"""
+{
+ "version":2,"id":"00000000-0000-0000-0000-00000000f101","name":"Adjustment study","assets":[],
+ "sequence":{
+  "settings":{"width":1280,"height":720,"frameRate":{"numerator":30,"denominator":1},"audioSampleRate":48000},
+  "tracks":[{"id":"00000000-0000-0000-0000-00000000f102","name":"Adjust","kind":"adjustment","isMuted":false,"isHidden":false,"isLocked":false,"clips":[
+   {"id":"00000000-0000-0000-0000-00000000f103","name":"Film fade","start":{"value":1,"timescale":1},"duration":{"value":2,"timescale":1},"sourceStart":{"value":1,"timescale":2},"speed":1,"preservesPitch":true,"audioEnabled":false,
+    "effects":[{"id":"00000000-0000-0000-0000-00000000f104","stableID":"life.filter.VHS","parameters":{"grain":0.3},"strength":0.6,"seed":99,"isEnabled":true}],
+    "volume":{"baseValue":1,"points":[],"evaluationOffset":{"value":0,"timescale":1}},
+    "opacity":{"baseValue":0.75,"evaluationOffset":{"value":1,"timescale":4},"points":[{"id":"00000000-0000-0000-0000-00000000f105","time":{"value":0,"timescale":1},"value":0,"interpolation":"linear"},{"id":"00000000-0000-0000-0000-00000000f106","time":{"value":1,"timescale":1},"value":1,"interpolation":"eased"}]}}
+  ]}],"markers":[],"multicamGroups":[]
+ }
+}
+"""#.utf8)
+@Test func migrationPreservesSchemaTwoAdjustmentEffectsOpacityAndAnimationClock()throws{
+    let legacy=try JSONDecoder().decode(ProjectDocument.self,from:schemaTwoAdjustment);#expect(legacy.version==2)
+    var expected=legacy;expected.version=ProjectDocument.currentVersion
+    let migrated=try ProjectDocument.decode(schemaTwoAdjustment);#expect(migrated==expected);#expect(migrated.version==3)
+    let clip=try #require(migrated.sequence.tracks.first?.clips.first)
+    #expect(clip.effects?[0].seed==99 && clip.effects?[0].strength==0.6)
+    #expect(clip.opacity.evaluationOffset==RationalTime(value:1,timescale:4));#expect(clip.sourceStart==RationalTime(value:1,timescale:2))
+    try AdjustmentLayers.validate(in:migrated)
+    #expect(try ProjectDocument.decode(migrated.encoded())==migrated)
+    #expect(throws:DocumentError.unsupportedVersion(2)){try legacy.encoded()}
+    #expect(throws:DocumentError.unsupportedVersion(4)){try ProjectDocument.decode(Data(#"{"version":4,"sequence":{"unknownNewLayout":true}}"#.utf8))}
 }

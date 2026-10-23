@@ -45,8 +45,9 @@ Apple references: [custom compositor](https://developer.apple.com/documentation/
 [rational time](https://developer.apple.com/documentation/coremedia/cmtime-api),
 [audio algorithms](https://developer.apple.com/documentation/avfoundation/time-pitch-algorithm-settings).
 
-Project JSON currently uses schema 2. Production reads inspect the version header
-before decoding project content. Schema 1 migrates without changing IDs, media
-references, rational timing, automation, or editing decisions; saving writes schema 2.
+Project JSON currently uses schema 3. Production reads inspect the version header
+before decoding project content. Schemas 1 and 2 migrate without changing IDs, media
+references, rational timing, automation, or editing decisions; saving writes schema 3.
+Schema 3 marks timed adjustment-layer rendering, so older builds refuse these projects.
 Newer schemas are refused, including when replacing an existing package. Recovery
 rotation preserves checkpoints from newer schemas verbatim.
