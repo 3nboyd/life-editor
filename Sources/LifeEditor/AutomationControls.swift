@@ -60,6 +60,14 @@ struct AutomationControls:View {
                 Spacer()
                 Button{store.selectAdjacentAutomationPoint(1)}label:{Image(systemName:"forward.end")}.help("Next point · ⌥]").accessibilityLabel("Next automation point").keyboardShortcut("]",modifiers:.option)
             }
+            HStack{
+                Menu{
+                    Button("Point"){store.copyAutomationPoint()}.disabled(store.currentAutomationPoint == nil).keyboardShortcut("c",modifiers:[.command,.option])
+                    Button("Visible points"){store.copyVisibleAutomationPoints()}.disabled(store.visibleAutomationPoints.isEmpty).keyboardShortcut("c",modifiers:[.command,.option,.shift])
+                }label:{Image(systemName:"doc.on.doc").frame(width:24,height:24)}.menuStyle(.borderlessButton).fixedSize().help("Copy automation points · ⌥⌘C").accessibilityLabel("Copy automation points")
+                Button{store.pasteAutomationPoints()}label:{Image(systemName:"doc.on.clipboard").frame(width:24,height:24)}.disabled(store.selectedClip == nil || store.placementProposal != nil).help("Paste automation points at playhead · ⌥⌘V").accessibilityLabel("Paste automation points at playhead").keyboardShortcut("v",modifiers:[.command,.option])
+                Spacer()
+            }
             if let point=store.currentAutomationPoint,let clip=store.selectedClip {
                 HStack{
                     Text("Time")
