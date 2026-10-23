@@ -40,6 +40,7 @@ final class EditorStore: ObservableObject {
         guard let item=player.currentItem else{invalidatePlaybackMeter();return}
         if playbackMeterSource?.matches(item) != true{invalidatePlaybackMeter();playbackMeterSource=PlaybackMeterSource(item:item)}
         let time=playheadTime
+        if let displayed=playbackMeter,abs(time.seconds-displayed.frame.time.seconds)>0.25{playbackMeter=nil}
         if playbackMeterJob != nil{pendingPlaybackMeterTime=time;return}
         guard lastPlaybackMeterTime != time,let source=playbackMeterSource else{return}
         lastPlaybackMeterTime=time;let generation=playbackMeterGeneration
