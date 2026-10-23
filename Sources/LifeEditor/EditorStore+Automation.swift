@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import LifeCore
 
 extension EditorStore {
@@ -13,6 +14,60 @@ extension EditorStore {
     }
     var currentAutomationPoint: AutomationPoint? { visibleAutomationPoints.first { $0.id == selectedAutomationPoint } }
     func automationLocalTime(_ point:AutomationPoint)->Double { (point.time-currentAutomationEnvelope.evaluationOffset).seconds }
+    func copyAutomationPoint(to pasteboard:NSPasteboard = .general){
+        guard let point=currentAutomationPoint else{error=AutomationClipboardError.selection.localizedDescription;return}
+        copyAutomationPoints([point],to:pasteboard)
+    }
+    func copyVisibleAutomationPoints(to pasteboard:NSPasteboard = .general){copyAutomationPoints(visibleAutomationPoints,to:pasteboard)}
+    private func copyAutomationPoints(_ points:[AutomationPoint],to pasteboard:NSPasteboard){
+        do{
+            guard points.count<=10000 else{throw AutomationClipboardError.limit}
+            let ordered=points.sorted{$0.time<$1.time}
+            guard let first=ordered.first else{throw AutomationClipboardError.selection}
+            let envelope=currentAutomationEnvelope
+            let copied=try ordered.map{point in
+                AutomationClipboardPoint(offset:.init(try point.time.checkedSubtracting(first.time)),effectiveValue:envelope.baseValue*point.value,interpolation:point.interpolation)
+            }
+            let payload=AutomationPointClipboard(version:1,lane:automationLane.rawValue,points:copied)
+            _ = try payload.checked(for:automationLane)
+            let data=try JSONEncoder().encode(payload);guard data.count<=AutomationPointClipboard.maximumBytes else{throw AutomationClipboardError.limit}
+            pasteboard.clearContents();guard pasteboard.setData(data,forType:AutomationPointClipboard.type) else{throw AutomationClipboardError.invalid}
+        }catch{self.error=(error as? LocalizedError)?.errorDescription ?? "Cannot copy these automation points."}
+    }
+    func pasteAutomationPoints(from pasteboard:NSPasteboard = .general){
+        guard placementProposal == nil else{error="Apply or cancel the placement preview first.";return}
+        guard let clip=selectedClip else{return}
+        do{
+            let copied=try AutomationPointClipboard.read(from:pasteboard).checked(for:automationLane)
+            guard (1...1_000_000_000).contains(playheadTime.timescale),playheadTime >= .zero,playheadTime.seconds<=86400 else{throw AutomationClipboardError.range}
+            let anchor=try playheadTime.checkedSubtracting(clip.start)
+            guard anchor >= .zero,try anchor.checkedAdding(copied.last!.offset)<=clip.duration else{throw AutomationClipboardError.range}
+            var selected:UUID?
+            let success=modifyAutomation{envelope,_ in
+                try self.rebaseAutomationIfNeeded(&envelope,local:anchor)
+                var indices:[RationalTime:Int]=[:]
+                for (index,point) in envelope.points.enumerated(){
+                    let canonical=try AutomationClipboardTime(point.time).checked()
+                    guard indices.updateValue(index,forKey:canonical)==nil else{throw AutomationClipboardError.invalid}
+                }
+                for point in copied{
+                    self.ensureAutomationBase(&envelope,for:point.value)
+                    if envelope.baseValue>0,!(point.value/envelope.baseValue).isFinite{
+                        let old=envelope.baseValue;for index in envelope.points.indices{envelope.points[index].value*=old};envelope.baseValue=1
+                    }
+                    let time=try anchor.checkedAdding(point.offset).checkedAdding(envelope.evaluationOffset)
+                    let value=envelope.baseValue>0 ? point.value/envelope.baseValue:0
+                    if let index=indices[time]{
+                        envelope.points[index].value=value;envelope.points[index].interpolation=point.curve
+                        if selected==nil{selected=envelope.points[index].id}
+                    }else{
+                        let added=AutomationPoint(time:time,value:value,interpolation:point.curve);indices[time]=envelope.points.count;envelope.points.append(added);if selected==nil{selected=added.id}
+                    }
+                }
+            }
+            if success{selectedAutomationPoint=selected}
+        }catch{self.error=(error as? LocalizedError)?.errorDescription ?? "The clipboard contains invalid automation points."}
+    }
     func setAutomationBase(_ value:Double) {
         guard value.isFinite,value>=0 else { error="Enter a finite level.";return }
         _ = modifyAutomation { envelope,_ in
