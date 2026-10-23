@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Testing
 import Foundation
 @testable import LifeMedia
@@ -28,4 +29,27 @@ private final class BlockingProbe:@unchecked Sendable{
     release.signal()
     do{try await job.value;Issue.record("Cancelled blocking operation returned success")}catch is CancellationError{}catch{Issue.record("Unexpected cancellation \(error)")}
     #expect(probe.values.completed)
+}
+
+@MainActor @Test func blockingReaderCancellationHandlesBothStartupStates()async throws{
+    let url=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".wav")
+    defer{try? FileManager.default.removeItem(at:url)}
+    let format=AVAudioFormat(standardFormatWithSampleRate:48000,channels:1)!
+    let buffer=AVAudioPCMBuffer(pcmFormat:format,frameCapacity:4800)!;buffer.frameLength=4800
+    for index in 0..<4800{buffer.floatChannelData![0][index]=0}
+    do{let file=try AVAudioFile(forWriting:url,settings:format.settings);try file.write(from:buffer)}
+    let source=AVURLAsset(url:url),tracks=try await source.loadTracks(withMediaType:.audio)
+    let track=try #require(tracks.first)
+    for beforeStart in [true,false]{
+        let reader=try AVAssetReader(asset:source),output=AVAssetReaderTrackOutput(track:track,outputSettings:nil)
+        reader.add(output)
+        let io=BlockingAssetReader(reader:reader,output:output,label:"org.lifeeditor.tests.reader")
+        if !beforeStart{try await io.start()}
+        io.cancel()
+        await #expect(throws:CancellationError.self){
+            if beforeStart{try await io.start()}else{_ = try await io.next()}
+        }
+        await io.cancelAndWait()
+        #expect(reader.status == (beforeStart ? .unknown:.cancelled))
+    }
 }

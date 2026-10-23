@@ -44,31 +44,37 @@ enum AudioScan {
             AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
             AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false])
         output.audioMix = plan.audio; output.alwaysCopiesSampleData = false
-        reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? MediaError.exportUnavailable }
-        defer { if reader.status == .reading { reader.cancelReading() } }
-        var reported = -1.0
-        while let buffer = output.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(buffer) {
-            try Task.checkCancellation()
-            let frames = CMSampleBufferGetNumSamples(buffer)
-            let position = max(0, Int64((CMSampleBufferGetPresentationTimeStamp(buffer).seconds * 48000).rounded()))
-            while scan.count < min(wanted, position) { if scan.count % 4096 == 0 { try Task.checkCancellation() }; scan.sample(0, 0) }
-            var samples = [Float](repeating: 0, count: frames * 2)
-            let status = samples.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
-            guard status == kCMBlockBufferNoErr else { throw MediaError.exportUnavailable }
-            let skip = min(frames, max(0, Int(scan.count - position)))
-            for index in skip..<frames where scan.count < wanted {
-                let left = Double(samples[index * 2]), right = Double(samples[index * 2 + 1])
-                guard left.isFinite, right.isFinite else { throw MediaError.unsupported("Non-finite audio samples") }
-                scan.sample(left, right)
-            }
-            let value = min(0.99, Double(scan.count) / Double(max(1, wanted)))
-            if value - reported >= 0.01, let progress { await progress(value); reported = value }
-        }
-        guard reader.status == .completed else { throw reader.error ?? MediaError.exportUnavailable }
-        while scan.count < wanted { try Task.checkCancellation(); scan.sample(0, 0) }
-        if let progress { await progress(1) }
-        return scan.finish()
+        guard reader.canAdd(output) else{throw MediaError.exportUnavailable};reader.add(output)
+        let io=BlockingAssetReader(reader:reader,output:output,label:"org.lifeeditor.measure.read")
+        return try await withTaskCancellationHandler{
+            do{
+                try await io.start()
+                var reported = -1.0
+                while let buffer = try await io.next().buffer {
+                    if CMSampleBufferGetNumSamples(buffer)==0{continue}
+                    guard let block=CMSampleBufferGetDataBuffer(buffer) else{throw MediaError.exportUnavailable}
+                    try Task.checkCancellation()
+                    let frames = CMSampleBufferGetNumSamples(buffer)
+                    let position = max(0, Int64((CMSampleBufferGetPresentationTimeStamp(buffer).seconds * 48000).rounded()))
+                    while scan.count < min(wanted, position) { if scan.count % 4096 == 0 { try Task.checkCancellation() }; scan.sample(0, 0) }
+                    var samples = [Float](repeating: 0, count: frames * 2)
+                    let status = samples.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: frames * 8, destination: $0.baseAddress!) }
+                    guard status == kCMBlockBufferNoErr else { throw MediaError.exportUnavailable }
+                    let skip = min(frames, max(0, Int(scan.count - position)))
+                    for index in skip..<frames where scan.count < wanted {
+                        let left = Double(samples[index * 2]), right = Double(samples[index * 2 + 1])
+                        guard left.isFinite, right.isFinite else { throw MediaError.unsupported("Non-finite audio samples") }
+                        scan.sample(left, right)
+                    }
+                    let value = min(0.99, Double(scan.count) / Double(max(1, wanted)))
+                    if value - reported >= 0.01, let progress { await progress(value); reported = value }
+                }
+                try await io.requireCompleted()
+                while scan.count < wanted { try Task.checkCancellation(); scan.sample(0, 0) }
+                if let progress { await progress(1) }
+                return scan.finish()
+            }catch{await io.cancelAndWait();throw error}
+        }onCancel:{io.cancel()}
     }
 }
 

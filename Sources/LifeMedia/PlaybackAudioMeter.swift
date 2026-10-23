@@ -17,12 +17,6 @@ public struct PlaybackMeterReading:Sendable,Equatable {
     public let sampleCount:Int
     public let elapsedSeconds:Double
 }
-private final class MeterCancellation:@unchecked Sendable {
-    private let lock=NSLock();private var reader:AVAssetReader?;private var cancelled=false
-    func install(_ reader:AVAssetReader){lock.lock();self.reader=reader;let cancel=cancelled;lock.unlock();if cancel{reader.cancelReading()}}
-    func clear(){lock.lock();reader=nil;lock.unlock()}
-    func cancel(){lock.lock();cancelled=true;let reader=reader;lock.unlock();reader?.cancelReading()}
-}
 private actor MeterAdmission {
     static let shared=MeterAdmission()
     private var busy=false
@@ -45,7 +39,7 @@ public enum PlaybackAudioMeter {
         catch{await MeterAdmission.shared.release();throw error}
     }
     private static func perform(_ source:PlaybackMeterSource,at time:RationalTime)async throws->PlaybackMeterReading {
-        try Task.checkCancellation();let cancellation=MeterCancellation()
+        try Task.checkCancellation()
         let task=Task.detached(priority:.utility){
             let began=ContinuousClock.now
             try Task.checkCancellation()
@@ -58,30 +52,34 @@ public enum PlaybackAudioMeter {
             output.audioMix=source.mix;output.alwaysCopiesSampleData=false
             guard reader.canAdd(output) else{throw MediaError.exportUnavailable};reader.add(output)
             reader.timeRange=CMTimeRange(start:CMTime(value:first,timescale:48000),duration:CMTime(value:4800,timescale:48000))
-            try Task.checkCancellation();guard reader.startReading() else{try Task.checkCancellation();throw reader.error ?? MediaError.exportUnavailable}
-            cancellation.install(reader);defer{cancellation.clear();reader.cancelReading()}
-            var left=Float(0),right=Float(0),count=0,buffers=0
-            while let sample=output.copyNextSampleBuffer(){
-                try Task.checkCancellation();buffers+=1
-                guard buffers<=64 else{throw MediaError.exportUnavailable}
-                let frames=CMSampleBufferGetNumSamples(sample)
-                if frames==0{continue}
-                guard buffers<=64,frames>=0,frames<=32768,let block=CMSampleBufferGetDataBuffer(sample),CMBlockBufferGetDataLength(block)>=frames*8 else{throw MediaError.exportUnavailable}
-                let position=CMTimeConvertScale(CMSampleBufferGetPresentationTimeStamp(sample),timescale:48000,method:.roundHalfAwayFromZero).value
-                var values=[Float](repeating:0,count:frames*2)
-                let status=values.withUnsafeMutableBytes{CMBlockBufferCopyDataBytes(block,atOffset:0,dataLength:frames*8,destination:$0.baseAddress!)}
-                guard status==noErr else{throw MediaError.exportUnavailable}
-                for index in 0..<frames where position+Int64(index)>=first && position+Int64(index)<last {
-                    let l=values[index*2],r=values[index*2+1];guard l.isFinite,r.isFinite else{throw MediaError.unsupported("Non-finite audio samples")}
-                    left=max(left,abs(l));right=max(right,abs(r));count+=1
-                    guard count<=4800 else{throw MediaError.exportUnavailable}
-                }
-            }
-            try Task.checkCancellation();guard reader.status == .completed else{throw reader.error ?? MediaError.exportUnavailable}
-            let duration=began.duration(to:.now),elapsed=Double(duration.components.seconds)+Double(duration.components.attoseconds)/1e18
-            func db(_ value:Float)->Double{value>0 ? 20*log10(Double(value)):-.infinity}
-            return PlaybackMeterReading(frame:.init(time:time,leftDBFS:db(left),rightDBFS:db(right)),sampleCount:count,elapsedSeconds:elapsed)
+            let io=BlockingAssetReader(reader:reader,output:output,label:"org.lifeeditor.meter.read")
+            return try await withTaskCancellationHandler{
+                do{
+                    try await io.start()
+                    var left=Float(0),right=Float(0),count=0,buffers=0
+                    while let sample=try await io.next().buffer{
+                        try Task.checkCancellation();buffers+=1
+                        guard buffers<=64 else{throw MediaError.exportUnavailable}
+                        let frames=CMSampleBufferGetNumSamples(sample)
+                        if frames==0{continue}
+                        guard buffers<=64,frames>=0,frames<=32768,let block=CMSampleBufferGetDataBuffer(sample),CMBlockBufferGetDataLength(block)>=frames*8 else{throw MediaError.exportUnavailable}
+                        let position=CMTimeConvertScale(CMSampleBufferGetPresentationTimeStamp(sample),timescale:48000,method:.roundHalfAwayFromZero).value
+                        var values=[Float](repeating:0,count:frames*2)
+                        let status=values.withUnsafeMutableBytes{CMBlockBufferCopyDataBytes(block,atOffset:0,dataLength:frames*8,destination:$0.baseAddress!)}
+                        guard status==noErr else{throw MediaError.exportUnavailable}
+                        for index in 0..<frames where position+Int64(index)>=first && position+Int64(index)<last {
+                            let l=values[index*2],r=values[index*2+1];guard l.isFinite,r.isFinite else{throw MediaError.unsupported("Non-finite audio samples")}
+                            left=max(left,abs(l));right=max(right,abs(r));count+=1
+                            guard count<=4800 else{throw MediaError.exportUnavailable}
+                        }
+                    }
+                    try await io.requireCompleted()
+                    let duration=began.duration(to:.now),elapsed=Double(duration.components.seconds)+Double(duration.components.attoseconds)/1e18
+                    func db(_ value:Float)->Double{value>0 ? 20*log10(Double(value)):-.infinity}
+                    return PlaybackMeterReading(frame:.init(time:time,leftDBFS:db(left),rightDBFS:db(right)),sampleCount:count,elapsedSeconds:elapsed)
+                }catch{await io.cancelAndWait();throw error}
+            }onCancel:{io.cancel()}
         }
-        return try await withTaskCancellationHandler{try await task.value}onCancel:{task.cancel();cancellation.cancel()}
+        return try await withTaskCancellationHandler{try await task.value}onCancel:{task.cancel()}
     }
 }
