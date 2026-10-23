@@ -14,9 +14,7 @@ enum CamcorderDateRenderer {
     /// Double, so fall back without changing any media/editing time mappings.
     static func sourceSeconds(for clip:Clip,at time:RationalTime)->Double? {
         guard (clip.effects ?? []).contains(where:{$0.isEnabled && $0.strength>0 && $0.stableID == "life.filter.VHS" && $0.camcorderDate?.enabled == true}) else{return nil}
-        if let source=try? clip.checkedSourceTime(at:time){return source.seconds}
-        let seconds=clip.freezeFrame?.sourceTime.seconds ?? (clip.sourceStart.seconds+(time.seconds-clip.start.seconds)*clip.speed)
-        return seconds.isFinite ? seconds:nil
+        return RenderClock.sourceSeconds(for:clip,at:time)
     }
     static func apply(_ overlay:CamcorderDateOverlay,to image:CIImage,sourceTime:RationalTime)->CIImage {
         apply(overlay,to:image,sourceSeconds:sourceTime.seconds)

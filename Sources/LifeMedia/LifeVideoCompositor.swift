@@ -105,7 +105,11 @@ final class LifeVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendab
         let activeTransitions = instruction.transitions.filter { $0.start <= time && time < $0.end }
         for layer in instruction.layers where layer.isActive(at: time) {
             if layer.isAdjustment {
-                let adjusted=EffectRenderer.apply(layer.clip.effects ?? [],to:image,time:layer.clip.sourceTime(at:time)).cropped(to:canvas)
+                guard let effectSeconds=RenderClock.sourceSeconds(for:layer.clip,at:time) else {
+                    request.finish(with:NSError(domain:"LifeEditor.Render",code:2,userInfo:[NSLocalizedDescriptionKey:"Invalid adjustment layer clock."]))
+                    return
+                }
+                let adjusted=EffectRenderer.apply(layer.clip.effects ?? [],to:image,timeSeconds:effectSeconds).cropped(to:canvas)
                 let opacity=max(0,min(1,layer.clip.opacity.value(at:time-layer.clip.start)))
                 image=image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":adjusted,"inputTime":opacity]).cropped(to:canvas)
                 continue

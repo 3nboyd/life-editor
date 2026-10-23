@@ -32,7 +32,11 @@ enum EffectRenderer {
         }
         """))
     static func apply(_ effects: [EffectInstance], to original: CIImage, time: RationalTime = .zero, sourceTime: RationalTime? = nil, sourceSeconds: Double? = nil) -> CIImage {
-        effects.filter(\.isEnabled).reduce(original) { input, effect in
+        apply(effects,to:original,timeSeconds:time.seconds,sourceSeconds:sourceSeconds ?? sourceTime?.seconds)
+    }
+    static func apply(_ effects:[EffectInstance],to original:CIImage,timeSeconds:Double,sourceSeconds:Double? = nil)->CIImage {
+        guard timeSeconds.isFinite else{return original}
+        return effects.filter(\.isEnabled).reduce(original) { input, effect in
             let strength = max(0, min(1, effect.strength))
             guard strength > 0 else { return input }
             var image = input
@@ -44,7 +48,7 @@ enum EffectRenderer {
                 image = image.applyingFilter("CITemperatureAndTint", parameters: ["inputNeutral": CIVector(x: 6500, y: 0), "inputTargetNeutral": CIVector(x: kelvin, y: tint)])
             }
             func grain(_ amount: Double) {
-                let frame = effect.stableID == "life.filter.VHS" ? floor(time.seconds * 30) : 0
+                let frame = effect.stableID == "life.filter.VHS" ? floor(timeSeconds * 30) : 0
                 let seed = Double(effect.seed % 1_000_003) + frame
                 image = noise.value?.apply(extent: image.extent, arguments: [image, amount, seed]) ?? image
             }
@@ -92,10 +96,10 @@ enum EffectRenderer {
                 case "fadedFilm": warmth(7000); controls(0.76, 0.035, 0.82); grain(max(0, min(1, effect.parameters["grain"] ?? 0.2)) * 0.18)
                 case "Y2K": controls(1.22, 0.01, 1.22); image = image.applyingFilter("CISharpenLuminance", parameters: ["inputSharpness": 0.5])
                 case "VHS":
-                    warmth(7200, 5); controls(0.7, sin(floor(time.seconds * 30) * 0.71 + Double(effect.seed % 1000)) * 0.008, 0.9)
+                    warmth(7200, 5); controls(0.7, sin(floor(timeSeconds * 30) * 0.71 + Double(effect.seed % 1000)) * 0.008, 0.9)
                     image = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 0.45]).cropped(to: input.extent)
                     grain(max(0, min(1, effect.parameters["grain"] ?? 0.2)) * 0.25)
-                    if let overlay=effect.camcorderDate{image=CamcorderDateRenderer.apply(overlay,to:image,sourceSeconds:sourceSeconds ?? sourceTime?.seconds ?? time.seconds)}
+                    if let overlay=effect.camcorderDate{image=CamcorderDateRenderer.apply(overlay,to:image,sourceSeconds:sourceSeconds ?? timeSeconds)}
                 case "disposable": warmth(7800, 4); controls(0.88, 0.015, 1.2); grain(max(0, min(1, effect.parameters["grain"] ?? 0.2)) * 0.25)
                 case "neon": warmth(5000, 12); controls(1.4, -0.025, 1.2)
                 case "mutedPastel": controls(0.62, 0.045, 0.83)
