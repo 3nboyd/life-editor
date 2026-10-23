@@ -9,6 +9,56 @@ enum TimelineGridMode:String {case time,frames,beats}
 
 @MainActor
 final class EditorStore: ObservableObject {
+    @Published var playbackMeter:PlaybackMeterReading?
+    @Published var playbackMeterClipped=false
+    @Published var playbackMeterUnavailable=false
+    private(set) var playbackMeterVisible=false
+    private var playbackMeterTick:Task<Void,Never>?
+    private var playbackMeterJob:Task<Void,Never>?
+    private var playbackMeterSource:PlaybackMeterSource?
+    private var playbackMeterGeneration=0
+    private var lastPlaybackMeterTime:RationalTime?
+    private var pendingPlaybackMeterTime:RationalTime?
+    func setPlaybackMeterVisible(_ visible:Bool){
+        guard visible != playbackMeterVisible else{return};playbackMeterVisible=visible
+        playbackMeterTick?.cancel();playbackMeterTick=nil;invalidatePlaybackMeter()
+        guard visible else{return}
+        requestPlaybackMeter()
+        playbackMeterTick=Task{[weak self] in
+            while !Task.isCancelled{
+                do{try await Task.sleep(for:.milliseconds(100))}catch{return}
+                guard let self,self.playbackMeterVisible else{return};self.requestPlaybackMeter()
+            }
+        }
+    }
+    func invalidatePlaybackMeter(){
+        playbackMeterGeneration+=1;playbackMeterJob?.cancel();playbackMeterJob=nil;playbackMeterSource=nil
+        pendingPlaybackMeterTime=nil;lastPlaybackMeterTime=nil;playbackMeter=nil;playbackMeterUnavailable=false
+    }
+    private func requestPlaybackMeter(){
+        guard playbackMeterVisible else{return}
+        guard let item=player.currentItem else{invalidatePlaybackMeter();return}
+        if playbackMeterSource?.matches(item) != true{invalidatePlaybackMeter();playbackMeterSource=PlaybackMeterSource(item:item)}
+        let time=playheadTime
+        if playbackMeterJob != nil{pendingPlaybackMeterTime=time;return}
+        guard lastPlaybackMeterTime != time,let source=playbackMeterSource else{return}
+        lastPlaybackMeterTime=time;let generation=playbackMeterGeneration
+        playbackMeterJob=Task{[weak self] in
+            do{
+                let reading=try await PlaybackAudioMeter.read(source,at:time)
+                guard !Task.isCancelled,let self,self.playbackMeterVisible,generation==self.playbackMeterGeneration,let item=self.player.currentItem,source.matches(item) else{return}
+                if abs(self.playhead-time.seconds)<=0.25{
+                    self.playbackMeter=reading;self.playbackMeterUnavailable=false
+                    if reading.frame.leftDBFS>=0 || reading.frame.rightDBFS>=0{self.playbackMeterClipped=true}
+                }else{self.playbackMeter=nil}
+            }catch{
+                if !Task.isCancelled,let self,generation==self.playbackMeterGeneration{self.playbackMeter=nil;self.playbackMeterUnavailable=true}
+            }
+            guard !Task.isCancelled,let self,generation==self.playbackMeterGeneration else{return}
+            self.playbackMeterJob=nil
+            if let next=self.pendingPlaybackMeterTime{self.pendingPlaybackMeterTime=nil;if next != time{self.requestPlaybackMeter()}}
+        }
+    }
     @Published var document = ProjectDocument()
     @Published var placementProposal:PlacementProposal?
     @Published var placementTitle="Insert"
@@ -145,6 +195,7 @@ final class EditorStore: ObservableObject {
     func undo() { if placementProposal != nil{cancelPlacement();return};editor.undo(); changed() }
     func redo() { if placementProposal != nil{cancelPlacement();return};editor.redo(); changed() }
     func rebuild(preview:ProjectDocument? = nil,synchronization:Bool=true) {
+        invalidatePlaybackMeter()
         refreshCameraAudio()
         syncPreviewing=preview != nil && synchronization;previewDocument=preview
         if (preview ?? document).sequence.duration == .zero { refreshTask?.cancel();videoOutput=nil;cancelColorSampling(); player.replaceCurrentItem(with:nil); return }
@@ -180,6 +231,7 @@ final class EditorStore: ObservableObject {
     func seek(_ exact:RationalTime){
         let position=min(max(.zero,exact),max(.zero,playbackDocument.sequence.duration))
         playheadTime=position
+        invalidatePlaybackMeter();requestPlaybackMeter()
         synchronizeCameraPlayers(position.seconds,playing:playing)
         player.seek(to:CMTime(value:position.value,timescale:CMTimeScale(position.timescale)),toleranceBefore:.zero,toleranceAfter:.zero)
     }
@@ -450,7 +502,7 @@ final class EditorStore: ObservableObject {
     }
     private func resetSession(){
         placementProposal=nil;placementBaseline=nil;autosaveError=nil;cancelColorSampling();videoOutput=nil;cameraAudioTask?.cancel();cameraAudioSignature="";cameraAudioIDs=[];checkingCameraAudio=false
-        cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncGeneration+=1;syncBaseline=nil;syncReferenceID=nil;syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
+        cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];playbackMeterClipped=false;invalidatePlaybackMeter();stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncGeneration+=1;syncBaseline=nil;syncReferenceID=nil;syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
     }
     func newProject() {
         guard confirmDiscard() else { return }
