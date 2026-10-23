@@ -18,6 +18,7 @@ public struct CamcorderDateOverlay:Codable,Equatable,Sendable {
     }
     public var isValid:Bool { sourceZeroUnixSeconds.isFinite && (-2208988800...4133980800).contains(sourceZeroUnixSeconds) && (-50400...50400).contains(utcOffsetSeconds) }
     public static func parse(_ text:String,origin:CamcorderDateOrigin = .manual)->Self? {
+        guard text.utf8.count<=35 else{return nil}
         // Timezone is mandatory; date-only and ambiguous local times are rejected.
         guard text.range(of:#"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"#,options:.regularExpression) != nil else{return nil}
         let suffix=text.hasSuffix("Z") ? "Z":String(text.suffix(6))
@@ -47,12 +48,13 @@ public struct CamcorderDateOverlay:Codable,Equatable,Sendable {
         let fraction=String(format:"%09d",nanos).replacingOccurrences(of:"0+$",with:"",options:.regularExpression)
         return String(base.prefix(19))+"."+fraction+base.dropFirst(19)
     }
-    public func text(at sourceTime:RationalTime)->String {
-        guard isValid,sourceTime.seconds.isFinite else{return ""}
+    public func text(at sourceTime:RationalTime)->String { text(atSourceSeconds:sourceTime.seconds) }
+    public func text(atSourceSeconds seconds:Double)->String {
+        guard isValid,seconds.isFinite else{return ""}
         let formatter=DateFormatter();formatter.locale=Locale(identifier:"en_US_POSIX");formatter.calendar=Calendar(identifier:.gregorian)
         formatter.timeZone=TimeZone(secondsFromGMT:utcOffsetSeconds)
         switch format {case .date:formatter.dateFormat="yyyy-MM-dd";case .time:formatter.dateFormat="HH:mm:ss";case .dateTime:formatter.dateFormat="yyyy-MM-dd HH:mm:ss"}
-        return formatter.string(from:Date(timeIntervalSince1970:floor(sourceZeroUnixSeconds+sourceTime.seconds)))
+        return formatter.string(from:Date(timeIntervalSince1970:floor(sourceZeroUnixSeconds+seconds)))
     }
     public static func validate(in document:ProjectDocument)throws {
         for track in document.sequence.tracks {for clip in track.clips {for effect in clip.effects ?? [] {

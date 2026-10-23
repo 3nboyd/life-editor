@@ -9,12 +9,24 @@ private final class CamcorderBitmapCache:@unchecked Sendable {
 }
 enum CamcorderDateRenderer {
     private static let cache=CamcorderBitmapCache()
+    /// A display-only clock. Valid rational edit times can require an
+    /// unrepresentable combined denominator; wall-clock formatting already uses
+    /// Double, so fall back without changing any media/editing time mappings.
+    static func sourceSeconds(for clip:Clip,at time:RationalTime)->Double? {
+        guard (clip.effects ?? []).contains(where:{$0.isEnabled && $0.strength>0 && $0.stableID == "life.filter.VHS" && $0.camcorderDate?.enabled == true}) else{return nil}
+        if let source=try? clip.checkedSourceTime(at:time){return source.seconds}
+        let seconds=clip.freezeFrame?.sourceTime.seconds ?? (clip.sourceStart.seconds+(time.seconds-clip.start.seconds)*clip.speed)
+        return seconds.isFinite ? seconds:nil
+    }
     static func apply(_ overlay:CamcorderDateOverlay,to image:CIImage,sourceTime:RationalTime)->CIImage {
+        apply(overlay,to:image,sourceSeconds:sourceTime.seconds)
+    }
+    static func apply(_ overlay:CamcorderDateOverlay,to image:CIImage,sourceSeconds:Double)->CIImage {
         guard overlay.enabled,overlay.isValid else{return image}
         let extent=image.extent
         guard extent.width.isFinite,extent.height.isFinite,extent.width>0,extent.height>0 else{return image}
         let margin=min(extent.width,extent.height)*0.05
-        let text=overlay.text(at:sourceTime)
+        let text=overlay.text(atSourceSeconds:sourceSeconds)
         // Fit the entire timestamp even on small canvases. Cache only its tight
         // bitmap, never a full-frame transparent surface per elapsed second.
         let initialFontSize=min(extent.width,extent.height)*0.038

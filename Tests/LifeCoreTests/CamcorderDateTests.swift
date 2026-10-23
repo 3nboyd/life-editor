@@ -4,6 +4,7 @@ import Foundation
 
 @Test func camcorderDatesRequireExplicitStrictTimezoneAndSurviveRoundtrip()throws {
     #expect(CamcorderDateOverlay.parse("")==nil)
+    #expect(CamcorderDateOverlay.parse("2000-01-01T00:00:00."+String(repeating:"1",count:100000)+"Z")==nil)
     #expect(CamcorderDateOverlay.parse("1899-12-31T23:59:59Z")==nil)
     #expect(CamcorderDateOverlay.parse("2102-01-01T00:00:00Z")==nil)
     #expect(CamcorderDateOverlay.parse("2024-02-30T12:00:00Z")==nil)
