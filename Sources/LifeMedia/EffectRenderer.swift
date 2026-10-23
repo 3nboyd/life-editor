@@ -31,7 +31,7 @@ enum EffectRenderer {
             return vec4(clamp(rgb + vec3(delta), 0.0, 1.0) * s.a, s.a);
         }
         """))
-    static func apply(_ effects: [EffectInstance], to original: CIImage, time: RationalTime = .zero) -> CIImage {
+    static func apply(_ effects: [EffectInstance], to original: CIImage, time: RationalTime = .zero, sourceTime: RationalTime? = nil) -> CIImage {
         effects.filter(\.isEnabled).reduce(original) { input, effect in
             let strength = max(0, min(1, effect.strength))
             guard strength > 0 else { return input }
@@ -95,6 +95,7 @@ enum EffectRenderer {
                     warmth(7200, 5); controls(0.7, sin(floor(time.seconds * 30) * 0.71 + Double(effect.seed % 1000)) * 0.008, 0.9)
                     image = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 0.45]).cropped(to: input.extent)
                     grain(max(0, min(1, effect.parameters["grain"] ?? 0.2)) * 0.25)
+                    if let overlay=effect.camcorderDate{image=CamcorderDateRenderer.apply(overlay,to:image,sourceTime:sourceTime ?? time)}
                 case "disposable": warmth(7800, 4); controls(0.88, 0.015, 1.2); grain(max(0, min(1, effect.parameters["grain"] ?? 0.2)) * 0.25)
                 case "neon": warmth(5000, 12); controls(1.4, -0.025, 1.2)
                 case "mutedPastel": controls(0.62, 0.045, 0.83)

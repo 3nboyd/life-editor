@@ -104,7 +104,7 @@ extension RationalTime {
             generator.requestedTimeToleranceBefore = .zero;generator.requestedTimeToleranceAfter = .zero
             source = CIImage(cgImage: try await generator.image(at: time.cmTime).image)
         }
-        let result = EffectRenderer.apply(effects, to: source, time: time)
+        let result = EffectRenderer.apply(effects, to: source, time: time, sourceTime:time)
         let context = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!,
                                           .outputColorSpace: CGColorSpace(name: CGColorSpace.itur_709)!])
         guard let image = context.createCGImage(result, from: result.extent) else { throw MediaError.unsupported(asset.url.lastPathComponent) }
