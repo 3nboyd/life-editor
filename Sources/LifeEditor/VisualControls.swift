@@ -112,6 +112,7 @@ struct TitleControls:View {
     @ObservedObject var store:EditorStore
     var body:some View {
         VStack(spacing:10){
+            TextPresetControls(store:store)
             Picker("Font",selection:Binding(get:{store.selectedClip?.title?.style?.fontName ?? "Helvetica-Bold"},set:{name in update{$0.fontName=name}})){
                 ForEach([("HelveticaNeue","Plain"),("Helvetica-Bold","Bold"),("HelveticaNeue-CondensedBold","Condensed"),("Georgia","Serif"),("Noteworthy","Handwritten"),("Menlo","Typewriter")],id:\.0){name,label in Text(label).tag(name)}
             }
