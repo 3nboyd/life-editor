@@ -76,8 +76,9 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-and 2 projects migrate to schema 3; unknown future project/recovery data is protected.
-Schema 3 prevents older readers from silently omitting adjustment-layer rendering.
+through 3 projects migrate to schema 4; unknown future project/recovery data is protected.
+Schema boundaries prevent older readers from silently omitting adjustment-layer or
+new tonal-control rendering.
 
 Live stereo Mix sample-peak meters now decode bounded windows from the current
 playback mix in the background, with clipping, seek/mix invalidation and visible-only
@@ -91,10 +92,16 @@ renderer, with opacity automation, actual thumbnails, bypass/reset, effect-setti
 copy/paste and exact undo. Native tests cover layer order, timing, seeded effect
 clocks, save/reopen and decoded preview/export comparisons.
 
-Blocking export, audio measurement and live-meter native reads now run on dedicated
+Blocking export, audio measurement, live-meter, retime, DSP and freeze-frame native
+reads now run on dedicated
 I/O queues. Export admission bounds active/pending jobs; cancellation waits for native
 operations to unwind before cleanup. A 12-request native export stress test verifies
 concurrent completion and cancellation preserving an existing destination.
 
-Local full native/helper verification: 179 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
+Whites, Black Point and Brilliance now use original linear-light tonal operators
+with neutral defaults, strength, bypass, reset, clipboard settings and shared
+preview/export rendering. Brilliance combines local contrast and tonal recovery;
+it does not reproduce Apple Photos processing.
+
+Local full native/helper verification: 186 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
