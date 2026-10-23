@@ -32,7 +32,7 @@ private let legacyProject=Data(#"""
     #expect(legacy.version==1)
     var expected=legacy;expected.version=ProjectDocument.currentVersion
     let migrated=try ProjectDocument.decode(legacyProject)
-    #expect(migrated==expected);#expect(ProjectDocument().version==4)
+    #expect(migrated==expected);#expect(ProjectDocument().version==5)
     #expect(migrated.sequence.settings.frameRate==FrameRate(numerator:30000,denominator:1001))
     #expect(migrated.sequence.tracks[1].clips[0].start==RationalTime(value:1,timescale:48000))
     #expect(migrated.sequence.tracks[0].clips[0].volume.points[0].time==RationalTime(value:1,timescale:48000))
@@ -90,14 +90,14 @@ private let schemaTwoAdjustment=Data(#"""
 @Test func migrationPreservesSchemaTwoAdjustmentEffectsOpacityAndAnimationClock()throws{
     let legacy=try JSONDecoder().decode(ProjectDocument.self,from:schemaTwoAdjustment);#expect(legacy.version==2)
     var expected=legacy;expected.version=ProjectDocument.currentVersion
-    let migrated=try ProjectDocument.decode(schemaTwoAdjustment);#expect(migrated==expected);#expect(migrated.version==4)
+    let migrated=try ProjectDocument.decode(schemaTwoAdjustment);#expect(migrated==expected);#expect(migrated.version==5)
     let clip=try #require(migrated.sequence.tracks.first?.clips.first)
     #expect(clip.effects?[0].seed==99 && clip.effects?[0].strength==0.6)
     #expect(clip.opacity.evaluationOffset==RationalTime(value:1,timescale:4));#expect(clip.sourceStart==RationalTime(value:1,timescale:2))
     try AdjustmentLayers.validate(in:migrated)
     #expect(try ProjectDocument.decode(migrated.encoded())==migrated)
     #expect(throws:DocumentError.unsupportedVersion(2)){try legacy.encoded()}
-    #expect(throws:DocumentError.unsupportedVersion(5)){try ProjectDocument.decode(Data(#"{"version":5,"sequence":{"unknownNewLayout":true}}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(6)){try ProjectDocument.decode(Data(#"{"version":6,"sequence":{"unknownNewLayout":true}}"#.utf8))}
 }
 
 @Test func migrationPreservesSchemaThreeLayerDecisionsWithoutRewritingEffects()throws{
@@ -105,9 +105,21 @@ private let schemaTwoAdjustment=Data(#"""
     let data=Data(String(decoding:schemaTwoAdjustment,as:UTF8.self).replacingOccurrences(of:"\"version\":2",with:"\"version\":3").utf8)
     let legacy=try JSONDecoder().decode(ProjectDocument.self,from:data)
     #expect(legacy.version==3)
-    var expected=legacy;expected.version=4
+    var expected=legacy;expected.version=ProjectDocument.currentVersion
     let migrated=try ProjectDocument.decode(data)
     #expect(migrated==expected)
     #expect(try ProjectDocument.decode(migrated.encoded())==expected)
     #expect(throws:DocumentError.unsupportedVersion(3)){try legacy.encoded()}
+}
+
+@Test func migrationPreservesSchemaFourTonalControls()throws{
+    var legacy=try JSONDecoder().decode(ProjectDocument.self,from:schemaTwoAdjustment)
+    legacy.version=4
+    legacy.sequence.tracks[0].clips[0].effects = [EffectInstance(stableID:"life.adjust.brilliance",parameters:["value":0.65],strength:0.8,seed:17)]
+    let data=try JSONEncoder().encode(legacy)
+    var expected=legacy;expected.version=ProjectDocument.currentVersion
+    let migrated=try ProjectDocument.decode(data)
+    #expect(migrated==expected)
+    #expect(try ProjectDocument.decode(migrated.encoded())==expected)
+    #expect(throws:DocumentError.unsupportedVersion(4)){try legacy.encoded()}
 }

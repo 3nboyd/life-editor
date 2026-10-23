@@ -23,7 +23,8 @@ public struct EffectInstance: Identifiable, Codable, Equatable, Sendable {
     public var strength: Double
     public var seed: UInt64
     public var isEnabled: Bool
-    public init(id: UUID = UUID(), stableID: String, parameters: [String:Double] = [:], strength: Double = 1, seed: UInt64 = 0, isEnabled: Bool = true) { self.id=id; self.stableID=stableID; self.parameters=parameters; self.strength=strength; self.seed=seed; self.isEnabled=isEnabled }
+    public var camcorderDate: CamcorderDateOverlay?
+    public init(id: UUID = UUID(), stableID: String, parameters: [String:Double] = [:], strength: Double = 1, seed: UInt64 = 0, isEnabled: Bool = true, camcorderDate: CamcorderDateOverlay? = nil) { self.camcorderDate=camcorderDate; self.id=id; self.stableID=stableID; self.parameters=parameters; self.strength=strength; self.seed=seed; self.isEnabled=isEnabled }
 }
 /// Stable original look identifiers. Rendering owns each definition's implementation.
 public enum NativeEffectRegistry {

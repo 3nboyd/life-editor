@@ -105,7 +105,7 @@ public struct Sequence: Codable, Equatable, Sendable {
     public var duration: RationalTime { tracks.flatMap(\.clips).map(\.end).max() ?? .zero }
 }
 public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
-    public static let currentVersion = 4
+    public static let currentVersion = 5
     public var version: Int; public var id: UUID; public var name: String; public var sequence: Sequence; public var assets: [MediaAsset]
     public init(id: UUID = UUID(), name: String = "Untitled", sequence: Sequence = .init(), assets: [MediaAsset] = []) { self.version=Self.currentVersion; self.id=id; self.name=name; self.sequence=sequence; self.assets=assets }
     public static func decode(_ data: Data) throws -> Self {
@@ -114,6 +114,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
     public func encoded() throws -> Data { try validate(); let encoder=JSONEncoder(); encoder.outputFormatting=[.prettyPrinted,.sortedKeys]; return try encoder.encode(self) }
     public func validate() throws {
         guard version == Self.currentVersion else { throw DocumentError.unsupportedVersion(version) }
+        try CamcorderDateOverlay.validate(in:self)
         let settings=sequence.settings
         guard (1...16384).contains(settings.width), (1...16384).contains(settings.height),
               (1...240000).contains(settings.frameRate.numerator), (1...1001).contains(settings.frameRate.denominator),
