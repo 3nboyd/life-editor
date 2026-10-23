@@ -22,3 +22,20 @@ import LifeCore
     #expect(store.error?.contains("Camcorder dates") == true)
     #expect(try ProjectDocument.decode(after.encoded())==after)
 }
+
+@MainActor @Test func replacingCamcorderDatePreservesPresentationAndUndoesAsOneEdit()throws {
+    let asset=MediaAsset(url:URL(fileURLWithPath:"/original.mov"),kind:.video,duration:.init(value:5,timescale:1))
+    var date=try #require(CamcorderDateOverlay.parse("2001-01-01T00:00:00Z"))
+    date.enabled=false;date.format = .time;date.corner = .topLeft
+    var effect=NativeEffectRegistry.make("life.filter.VHS");effect.camcorderDate=date
+    let clip=Clip(assetID:asset.id,duration:.init(value:3,timescale:1),effects:[effect])
+    let store=EditorStore();store.replace(ProjectDocument(sequence:Sequence(tracks:[Track(name:"Video",kind:.video,clips:[clip])]),assets:[asset]));store.selection=clip.id
+    let controls=CamcorderDateControls(store:store,effectID:effect.id,asset:asset),before=store.document
+    let candidate=try #require(CamcorderDateOverlay.parse("2024-02-29T12:34:56+02:00",origin:.recorded))
+    controls.applyDate(candidate)
+    let actual=try #require(store.selectedClip?.effects?.first?.camcorderDate)
+    #expect(actual.sourceZeroUnixSeconds==candidate.sourceZeroUnixSeconds && actual.utcOffsetSeconds==candidate.utcOffsetSeconds && actual.origin == .recorded)
+    #expect(!actual.enabled && actual.format == .time && actual.corner == .topLeft)
+    store.undo();#expect(store.document==before)
+    store.redo();#expect(store.selectedClip?.effects?.first?.camcorderDate==actual)
+}

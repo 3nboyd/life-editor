@@ -46,7 +46,7 @@ struct EffectBrowser:View {
                 if let effect=store.selectedClip?.effects?.first(where:{$0.stableID.hasPrefix("life.filter.")}){
                     HStack{Text("Strength");Slider(value:Binding(get:{store.selectedClip?.effects?.first(where:{$0.id==effect.id})?.strength ?? 1},set:{value in store.editSelected{clip in if let i=clip.effects?.firstIndex(where:{$0.id==effect.id}){clip.effects?[i].strength=value}}}),in:0...1,onEditingChanged:{active in if active{store.beginGesture()}else{store.endGesture()}}).accessibilityLabel("Filter strength")}
                     HStack{
-                        if effect.stableID == "life.filter.VHS",let asset{CamcorderDateControls(store:store,effectID:effect.id,asset:asset)}
+                        if effect.stableID == "life.filter.VHS",let asset{CamcorderDateControls(store:store,effectID:effect.id,asset:asset).id(effect.id)}
                         Toggle("Bypass",isOn:Binding(get:{!(store.selectedClip?.effects?.first(where:{$0.id==effect.id})?.isEnabled ?? true)},set:{value in store.editSelected{clip in if let i=clip.effects?.firstIndex(where:{$0.id==effect.id}){clip.effects?[i].isEnabled = !value}}})).toggleStyle(.button)
                         Spacer();Button("Reset"){store.editSelected{$0.effects?.removeAll{$0.stableID.hasPrefix("life.filter.")}}}
                     }
