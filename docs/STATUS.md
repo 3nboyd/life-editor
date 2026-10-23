@@ -28,8 +28,7 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
 
-- Manual-marker synchronization, drift correction preview and richer direct
-  cut refinement.
+- Drift correction preview and richer direct cut refinement.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse and speed ramps; broader freeze integration.
@@ -79,5 +78,12 @@ Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
 projects migrate to schema 2; unknown future project/recovery data is protected.
 
-Local full native/helper verification:152 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
+Live stereo Mix sample-peak meters now decode bounded windows from the current
+playback mix in the background, with clipping, seek/mix invalidation and visible-only
+updates. They measure the project mix before device/system volume. Eight original
+text families have actual rendered thumbnails and one-step undo. Clip-marker
+alignment reviews a single recording at a time without moving other angles; its
+source impulse matches preview and export after save/reopen.
+
+Local full native/helper verification:164 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
