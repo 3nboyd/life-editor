@@ -12,6 +12,7 @@ struct RenderLayer: @unchecked Sendable {
     var multicam: MulticamGroup? = nil
     var renderStart: RationalTime? = nil
     var renderEnd: RationalTime? = nil
+    var isAdjustment=false
     func isActive(at time: RationalTime) -> Bool { (renderStart ?? clip.start) <= time && time < (renderEnd ?? clip.end) }
 }
 
@@ -103,6 +104,12 @@ final class LifeVideoCompositor: NSObject, AVVideoCompositing, @unchecked Sendab
         // clips never cover the pair a second time, including unsorted clip arrays.
         let activeTransitions = instruction.transitions.filter { $0.start <= time && time < $0.end }
         for layer in instruction.layers where layer.isActive(at: time) {
+            if layer.isAdjustment {
+                let adjusted=EffectRenderer.apply(layer.clip.effects ?? [],to:image,time:layer.clip.sourceTime(at:time)).cropped(to:canvas)
+                let opacity=max(0,min(1,layer.clip.opacity.value(at:time-layer.clip.start)))
+                image=image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":adjusted,"inputTime":opacity]).cropped(to:canvas)
+                continue
+            }
             if activeTransitions.contains(where: { $0.transition.rightClipID == layer.clip.id }) { continue }
             let foreground: CIImage
             if let pair = activeTransitions.first(where: { $0.transition.leftClipID == layer.clip.id }),

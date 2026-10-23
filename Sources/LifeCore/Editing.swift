@@ -42,6 +42,9 @@ public enum EditCommand: Sendable {
     private var groupStart: ProjectDocument?
     private var groupDepth = 0
     public init(document: ProjectDocument = .init()) { self.document=document }
+    private func rejectAdjustments(in ids:Set<UUID>)throws{
+        guard !document.sequence.tracks.contains(where:{$0.kind == .adjustment && $0.clips.contains{ids.contains($0.id)}}) else{throw AdjustmentLayerError.invalidContents}
+    }
     public var canUndo: Bool { groupDepth == 0 && !undoStack.isEmpty }
     public var canRedo: Bool { groupDepth == 0 && !redoStack.isEmpty }
     public var snapshot: ProjectSnapshot { .init(document: document) }
@@ -91,7 +94,7 @@ public enum EditCommand: Sendable {
                     if var frozen=clip.freezeFrame{frozen.effectTimeOffset=try frozen.effectTimeOffset.checkedAdding(startDelta);clip.freezeFrame=frozen}
                     clip.sourceStart=try prior.checkedSourceTime(at:prior.start.checkedAdding(startDelta))
                     if next.assets.first(where: { $0.id == clip.assetID })?.kind == .image { clip.sourceStart = .zero }
-                    guard clip.sourceStart >= .zero else { throw DocumentError.sourceBoundary }
+                    guard clip.sourceStart >= .zero || next.sequence.tracks[t].kind == .adjustment else { throw DocumentError.sourceBoundary }
                     if let asset=next.assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, try clip.checkedSourceTime(at: clip.end) > asset.duration { throw DocumentError.sourceBoundary }
                     clip.volume=try prior.volume.window(from: startDelta, duration: clip.duration)
                     clip.opacity=try prior.opacity.window(from: startDelta, duration: clip.duration)
@@ -132,6 +135,7 @@ public enum EditCommand: Sendable {
                 }
             }
         case .retime(let id, let speed, let preservesPitch):
+            try rejectAdjustments(in:[id])
             guard speed.isFinite, (0.25...4).contains(speed) else { throw DocumentError.invalidTiming }
             guard try find(id).freezeFrame == nil else{throw DocumentError.invalidTiming}
             let newRate=Int64((speed*1_000_000).rounded())
@@ -208,6 +212,7 @@ public enum EditCommand: Sendable {
             try update(&next,ids:ids) { $0.linkID=nil }
         case .link(let selected):
             let ids=try expanded(selected,links:true,groups:false)
+            try rejectAdjustments(in:ids)
             let clips=document.sequence.tracks.flatMap(\.clips).filter { ids.contains($0.id) }
             guard let first=clips.first, clips.count >= 2,
                   clips.allSatisfy({ $0.start == first.start && $0.duration == first.duration && $0.speed == first.speed }) else { throw DocumentError.invalidTiming }
@@ -216,6 +221,7 @@ public enum EditCommand: Sendable {
         case .slip(let id, let requestedDelta):
             let original=try find(id), delta=editTime(requestedDelta,for:try find(id))
             let ids=try expanded([original.id],links:true,groups:false)
+            try rejectAdjustments(in:ids)
             try update(&next,ids:ids) { clip in
                 guard clip.freezeFrame == nil else{throw DocumentError.sourceBoundary}
                 clip.sourceStart=try clip.sourceStart.checkedAdding(delta)
@@ -227,6 +233,7 @@ public enum EditCommand: Sendable {
             guard originalLeft.end == originalRight.start else { throw DocumentError.invalidSplit }
             let boundary=editTime(requestedBoundary,for:originalLeft)
             let leftIDs=try expanded([leftID],links:true,groups:false), rightIDs=try expanded([rightID],links:true,groups:false)
+            try rejectAdjustments(in:leftIDs.union(rightIDs))
             guard leftIDs.isDisjoint(with:rightIDs) else { throw DocumentError.invalidSplit }
             for t in next.sequence.tracks.indices {
                 let leftIndex=next.sequence.tracks[t].clips.firstIndex { leftIDs.contains($0.id) }

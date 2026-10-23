@@ -290,6 +290,7 @@ extension RationalTime {
     private func compile(_ snapshot: ProjectSnapshot, proxies: [UUID: URL] = [:],allowAudition:Bool = false) async throws -> Compilation {
         let document = snapshot.document
         try document.validate()
+        try AdjustmentLayers.validate(in:document)
         let composition = AVMutableComposition()
         let settings = document.sequence.settings
         let transitions = (document.sequence.transitions ?? []).compactMap { TransitionResolver.resolve($0, in: document) }
@@ -308,6 +309,11 @@ extension RationalTime {
                 let renderEnd = transitions.first { $0.transition.leftClipID == clip.id }?.end ?? clip.end
                 let clipEnd = CMTimeAdd(clip.start.cmTime, clip.duration.cmTime)
                 end = CMTimeMaximum(end, clipEnd)
+                if track.kind == .adjustment {
+                    try AdjustmentLayers.validate(clip)
+                    if !track.isHidden{layers.append(RenderLayer(trackID:nil,clip:clip,transform:.identity,titleImage:nil,renderStart:clip.start,renderEnd:clip.end,isAdjustment:true))}
+                    continue
+                }
                 if let title = clip.title, !track.isHidden {
                     layers.append(RenderLayer(trackID: nil, clip: clip, transform: .identity,
                                               titleImage: TitleRenderer.image(title, size: size), renderStart: renderStart, renderEnd: renderEnd))

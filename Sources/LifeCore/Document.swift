@@ -122,6 +122,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
         if let grid=sequence.musicalGrid {
             guard grid.isValid else { throw DocumentError.invalidTiming }
         }
+        let adjustmentIDs=Set(sequence.tracks.filter{$0.kind == .adjustment}.flatMap(\.clips).map(\.id))
         let clips=sequence.tracks.flatMap(\.clips)
         guard Set(clips.map(\.id)).count == clips.count, Set(sequence.tracks.map(\.id)).count == sequence.tracks.count, Set(assets.map(\.id)).count == assets.count else { throw DocumentError.duplicateID }
         func validTime(_ time: RationalTime, signed: Bool = false) -> Bool {
@@ -129,7 +130,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
         }
         for asset in assets { guard validTime(asset.duration), asset.duration > .zero else { throw DocumentError.invalidTiming } }
         for clip in clips {
-            guard validTime(clip.start), validTime(clip.duration), clip.duration > .zero, validTime(clip.sourceStart),
+            guard validTime(clip.start), validTime(clip.duration), clip.duration > .zero, validTime(clip.sourceStart,signed:adjustmentIDs.contains(clip.id)),
                   clip.speed.isFinite, (0.25...4).contains(clip.speed), clip.volume.baseValue.isFinite, clip.opacity.baseValue.isFinite,
                   (0...AudioSettings.maximumLinearGain).contains(clip.volume.baseValue), (0...1).contains(clip.opacity.baseValue),
                   clip.title == nil || (clip.title!.fontSize.isFinite && (1...4096).contains(clip.title!.fontSize)) else { throw DocumentError.invalidTiming }
@@ -159,7 +160,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             if clip.freezeFrame == nil {
                 let sourceDuration=try clip.duration.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
                 let sourceEnd=try clip.sourceStart.checkedAdding(sourceDuration)
-                guard validTime(sourceEnd) else { throw DocumentError.invalidTiming }
+                guard validTime(sourceEnd,signed:adjustmentIDs.contains(clip.id)) else { throw DocumentError.invalidTiming }
                 if let asset=assets.first(where: { $0.id == clip.assetID }), asset.kind != .image, sourceEnd > asset.duration { throw DocumentError.sourceBoundary }
             }
             for (envelope,maximum) in [(clip.volume,AudioSettings.maximumLinearGain),(clip.opacity,1.0)] {
