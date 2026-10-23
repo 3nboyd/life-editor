@@ -16,7 +16,9 @@ multicam groups/cuts/audition with persistent master; reader/writer exports with
 six formats/ranges/progress/cancel/atomic replacement.
 
 Direct timeline automation supports points, level/fade handles, linear/eased/hold
-curves, numeric navigation and exact gesture undo. Marker controls include notes,
+curves, numeric navigation and exact gesture undo. Point/visible-point copy and
+paste preserve rational spacing, effective levels and curves across clip base
+levels; collision merges and atomic range/lane validation undo as one edit. Marker controls include notes,
 colors, ranges and source anchoring. A shared hue/SV/RGB/HEX/alpha popover supplies
 recent/saved swatches and viewer sampling. Six deterministic title entrances
 preserve animation clocks through trimming/splitting/retiming. Standard commands
@@ -76,9 +78,9 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-through 3 projects migrate to schema 4; unknown future project/recovery data is protected.
+through 4 projects migrate to schema 5; unknown future project/recovery data is protected.
 Schema boundaries prevent older readers from silently omitting adjustment-layer or
-new tonal-control rendering.
+new tonal-control or explicit camcorder-date rendering.
 
 Live stereo Mix sample-peak meters now decode bounded windows from the current
 playback mix in the background, with clipping, seek/mix invalidation and visible-only
@@ -103,5 +105,18 @@ with neutral defaults, strength, bypass, reset, clipboard settings and shared
 preview/export rendering. Brilliance combines local contrast and tonal recovery;
 it does not reproduce Apple Photos processing.
 
-Local full native/helper verification: 186 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
+The VHS camcorder date overlay accepts explicit timezone-qualified dates or a
+reviewed local content-creation metadata candidate. Date/time/both, four corners
+and visibility persist with the effect; source clocks follow retiming and hold
+through freezes. Preview, thumbnails and export share Core Text rendering. No
+current-date or filesystem-date fallback is used. Display-only clocks avoid
+overflow without changing rational editing or media timing. Adjustment-layer
+animated effect clocks use the same checked rendering path; regression fixtures
+include large prime-denominator source starts and high rational frame rates.
+
+Automation clipboard is bounded to 10,000 points/1 MB. It copies stored visible
+knots without adding implicit guards; multi-point selection/editing remains open.
+Camcorder formats are fixed ISO date/24-hour time, with an explicit fixed UTC offset.
+
+Local full native/helper verification: 205 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.

@@ -63,7 +63,7 @@ Gate: four cameras + separate audio, switching pass/refinement/export with conti
 - [ ] Effects browser Transitions/Filters/Adjust and contextual audio; live thumbnails/drag/intensity-duration/favorites/bypass/reset/copy-paste; stable registry/defaults/animation/render bindings.
 - [ ] Boundary transitions with source handles/visible duration limits/explicit freeze: dissolve, black/white fade, dip color, push/slide/wipe, zoom/blur, whip/shake, glitch/RGB, flash/light leak. No silent timing changes.
 - [ ] Original strength-controlled grayscale/high-contrast, LA/desert/clean/vivid/portrait/cool/cinematic/golden-hour/faded-film/Y2K/VHS/disposable/neon/pastel presets; deterministic grain/flicker.
-- [ ] Camcorder date/time overlay format/position/visibility; reliable recorded date or user input, never silent today.
+- [x] Camcorder date/time overlay format/position/visibility; explicit review of valid content-creation metadata or user input, never silent today.
 - [ ] Exposure/brightness/contrast/highlights/shadows/whites/blacks/saturation/vibrance/temperature/tint/hue/local tone/glow/sharpen/clarity/denoise/vignette/grain/WB eyedropper; advanced RGB curves/levels/HSL.
 - [x] Timed adjustment layers affect lower visual tracks.
 - [ ] Plain/bold/condensed/serif/handwritten/outline/neon/typewriter text; solid/translucent/square/rounded/pill/bubble backgrounds; all typography/padding/border/shadow/opacity/alignment controls.

@@ -45,11 +45,19 @@ Apple references: [custom compositor](https://developer.apple.com/documentation/
 [rational time](https://developer.apple.com/documentation/coremedia/cmtime-api),
 [audio algorithms](https://developer.apple.com/documentation/avfoundation/time-pitch-algorithm-settings).
 
-Project JSON currently uses schema 4. Production reads inspect the version header
-before decoding project content. Schemas 1, 2 and 3 migrate without changing IDs, media
-references, rational timing, automation, or editing decisions; saving writes schema 4.
+Project JSON currently uses schema 5. Production reads inspect the version header
+before decoding project content. Schemas 1 through 4 migrate without changing IDs, media
+references, rational timing, automation, or editing decisions; saving writes schema 5.
 Schema 3 marks timed adjustment-layer rendering; schema 4 adds Whites, Black Point
-and Brilliance rendering. Older builds refuse these projects instead of silently
+and Brilliance rendering; schema 5 persists explicit camcorder dates. Older builds
+refuse these projects instead of silently
 omitting their processing.
 Newer schemas are refused, including when replacing an existing package. Recovery
 rotation preserves checkpoints from newer schemas verbatim.
+
+Camcorder dates belong to the VHS effect and store an explicitly chosen source-zero
+wall clock plus fixed UTC offset. [QuickTime content-creation metadata](https://developer.apple.com/documentation/avfoundation/avmetadataidentifier/quicktimemetadatacreationdate)
+is offered for review, never treated as proof of camera capture or replaced with
+a filesystem/current date. Core Text bitmaps are bounded and shared as immutable
+images. Render-only scalar clock fallbacks handle otherwise unrepresentable rational
+combinations without changing document, media, or automation timestamps.
