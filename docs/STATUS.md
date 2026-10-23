@@ -49,8 +49,8 @@ with gain/pan/channel mapping/EQ/optional limiter, sample meters and calibrated
 stereo BS.1770 integrated loudness. These do not close complete phase gates.
 
 Other limits: rational timing bounded to 24 h/representable values; constant speed
-uses six decimals; four live angles per page; missing effects/fonts persist but
-need visible missing-resource UX. Peaks are sample peaks, not true peaks. Limiter
+uses six decimals; four live angles per page. Missing effects/fonts persist with
+inspector warnings; broader missing-resource workflows still need QA. Peaks are sample peaks, not true peaks. Limiter
 is per clip; summed tracks may still clip. No Developer ID/notary identity is
 available, so development builds remain ad-hoc signed.
 
