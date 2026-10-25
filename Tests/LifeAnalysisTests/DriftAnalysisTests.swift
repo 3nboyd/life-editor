@@ -21,11 +21,13 @@ private func driftSignal(_ time:Double)->Float {
     let reference=AudioFingerprint(values:(0..<Int(duration*rate)).map{driftSignal(Double($0)/rate)},samplesPerSecond:rate)
     for slope in [0.999,1.001] {
         let other=AudioFingerprint(values:(0..<Int((duration-origin)/slope*rate)).map{driftSignal(origin+slope*Double($0)/rate)},samplesPerSecond:rate)
-        let fit=try #require(try AudioAnalyzer.drift(reference:reference,other:other,coarseOffset:origin))
-        #expect(abs(fit.speed-1/slope)<0.0001)
-        #expect(abs(fit.sourceOrigin-origin)<0.04)
-        #expect(fit.confidence>=0.6)
-        #expect(fit.late.sourceSeconds-fit.early.sourceSeconds>3800)
+        for hint in [origin-0.1,origin+0.1] {
+            let fit=try #require(try AudioAnalyzer.drift(reference:reference,other:other,coarseOffset:hint))
+            #expect(abs(fit.speed-1/slope)<0.0001)
+            #expect(abs(fit.sourceOrigin-origin)<0.04)
+            #expect(fit.confidence>=0.6)
+            #expect(fit.late.sourceSeconds-fit.early.sourceSeconds>3800)
+        }
     }
 }
 @Test func anchoredDriftAnalysisRejectsSilencePeriodicShortAndNonlinearRecordings()throws {

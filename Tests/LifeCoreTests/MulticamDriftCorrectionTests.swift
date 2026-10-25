@@ -24,9 +24,11 @@ private func driftFit(_ slope:Double=1.001,_ origin:Double=2)throws->AffineDrift
     let second=Clip(assetID:camera.id,start:.init(value:200,timescale:1),duration:.init(value:100,timescale:1),sourceStart:.init(value:200,timescale:1))
     let audio=Clip(assetID:master.id,duration:.init(value:600,timescale:1))
     let group=MulticamGroup(angleAssetIDs:[camera.id],masterAudioAssetID:master.id,cuts:[.init(time:.zero,angleID:camera.id)])
-    let document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Camera",kind:.video,clips:[first,second]),Track(name:"Master",kind:.audio,clips:[audio])],multicamGroups:[group]),assets:[camera,master])
+    let markers=[Marker(time:.init(value:50,timescale:1),name:"Source note",clipID:first.id),Marker(time:.init(value:40,timescale:1),name:"Timeline note")]
+    let document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Camera",kind:.video,clips:[first,second]),Track(name:"Master",kind:.audio,clips:[audio])],markers:markers,multicamGroups:[group]),assets:[camera,master])
     let correction=try driftFit(),proposal=try MulticamDriftCorrection.applying(correction,to:camera.id,referenceID:master.id,in:document)
     #expect(proposal.document.assets==document.assets)
+    #expect(proposal.document.sequence.markers==markers)
     #expect(proposal.document.sequence.tracks[1]==document.sequence.tracks[1])
     #expect(proposal.document.sequence.multicamGroups==document.sequence.multicamGroups)
     let adjusted=proposal.document.sequence.tracks[0].clips

@@ -16,7 +16,9 @@ extension AudioAnalyzer {
         guard referenceDuration.isFinite,otherDuration.isFinite,(0...86400).contains(referenceDuration),(0...86400).contains(otherDuration) else{return nil}
         let start=max(0,coarseOffset),end=min(referenceDuration,otherDuration+coarseOffset)
         guard end-start>=180 else{return nil}
-        let centers=[start+15,(start+end)/2,end-15]
+        let margin=2+0.01*max(abs(start-coarseOffset),abs(end-coarseOffset))
+        let centers=[start+15+margin,(start+end)/2,end-15-margin]
+        guard centers[0]<centers[1],centers[1]<centers[2] else{return nil}
         var anchors:[DriftAnchor]=[]
         for center in centers {
             try Task.checkCancellation()
