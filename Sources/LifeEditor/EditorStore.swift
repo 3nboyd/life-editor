@@ -756,20 +756,17 @@ final class EditorStore: ObservableObject {
                         let matching=Task.detached(priority:.utility){AudioAnalyzer.synchronize(reference:reference,other:other,maxOffset:120)}
                         let match=await withTaskCancellationHandler{await matching.value}onCancel:{matching.cancel()}
                         try Task.checkCancellation()
-                        var drift:Double?
-                        let count=min(reference.values.count,other.values.count,Int(reference.samplesPerSecond*90))
-                        if count>Int(reference.samplesPerSecond*10),reference.values.count>Int(reference.samplesPerSecond*180),let match {
-                            let aStart=reference.values.count-count,bStart=other.values.count-count
-                            let a=AudioFingerprint(values:Array(reference.values.suffix(count)),samplesPerSecond:reference.samplesPerSecond)
-                            let b=AudioFingerprint(values:Array(other.values.suffix(count)),samplesPerSecond:other.samplesPerSecond)
-                            let lateTask=Task.detached(priority:.utility){AudioAnalyzer.synchronize(reference:a,other:b,maxOffset:60)}
-                            let late=await withTaskCancellationHandler{await lateTask.value}onCancel:{lateTask.cancel()}
-                            if let late,late.confidence>0.6,match.confidence>0.6 {
-                                let change=Double(aStart-bStart)/reference.samplesPerSecond+late.offset-match.offset
-                                if abs(change)>0.04{drift=change}
-                            }
+                        var correction:AffineDriftCorrection?,note:String?
+                        // Coarse correlation only centers the bounded search;
+                        // confidence is established by all three local anchors.
+                        if let match {
+                            let driftTask=Task.detached(priority:.utility){try AudioAnalyzer.drift(reference:reference,other:other,coarseOffset:match.offset)}
+                            do{correction=try await withTaskCancellationHandler{try await driftTask.value}onCancel:{driftTask.cancel()}}
+                            catch is CancellationError{throw CancellationError()}
+                            catch{note="Review clock"}
                         }
-                        results.append(.init(assetID:id,offset:match?.offset ?? fallback.seconds,confidence:match?.confidence ?? 0,drift:drift,note:match == nil ? "Manual":nil))
+                        let drift=correction.map{($0.late.referenceSeconds-$0.late.sourceSeconds)-($0.early.referenceSeconds-$0.early.sourceSeconds)}
+                        results.append(.init(assetID:id,offset:correction?.sourceOrigin ?? match?.offset ?? fallback.seconds,confidence:correction?.confidence ?? match?.confidence ?? 0,drift:drift,note:match == nil ? "Manual":note,correction:correction))
                     }catch is CancellationError{throw CancellationError()}
                     catch{results.append(.init(assetID:id,offset:fallback.seconds,confidence:0,note:"No audio"))}
                 }
@@ -785,7 +782,7 @@ final class EditorStore: ObservableObject {
     static func currentSyncOffset(assetID:UUID,relativeTo referenceID:UUID,in document:ProjectDocument)throws->RationalTime {
         let clips=document.sequence.tracks.flatMap(\.clips)
         guard let reference=clips.filter({$0.assetID==referenceID}).min(by:{$0.start<$1.start}),let clip=clips.filter({$0.assetID==assetID}).min(by:{$0.start<$1.start}) else{return .zero}
-        return try clip.start.checkedSubtracting(clip.sourceStart).checkedSubtracting(reference.start.checkedSubtracting(reference.sourceStart))
+        return try Self.synchronizationSourceOrigin(clip,in:document).checkedSubtracting(Self.synchronizationSourceOrigin(reference,in:document))
     }
     static func timecodeSynchronization(in document:ProjectDocument,references:[UUID:TimecodeReference],notes:[UUID:String]=[:])throws->(referenceID:UUID,candidates:[CameraSyncCandidate]) {
         guard let group=document.sequence.multicamGroups.last else{throw DocumentError.clipNotFound}
@@ -800,6 +797,18 @@ final class EditorStore: ObservableObject {
         }
         return (referenceID,candidates)
     }
+    func prepareManualSynchronization(){
+        guard !recordingPass,placementProposal==nil,let group=multicamGroup,let referenceID=group.masterAudioAssetID else{error="Choose master audio before manual synchronization.";return}
+        do{
+            let references=document.sequence.tracks.flatMap(\.clips).filter{$0.assetID==referenceID}
+            guard !references.isEmpty,references.allSatisfy({$0.speed==1}) else{error="Keep master audio at 1× for synchronization.";return}
+            syncTask?.cancel();syncGeneration+=1;synchronizing=false
+            if syncPreviewing{rebuild()}
+            let baseline=document
+            let candidates=try group.angleAssetIDs.filter{$0 != referenceID}.map{CameraSyncCandidate(assetID:$0,offset:try Self.currentSyncOffset(assetID:$0,relativeTo:referenceID,in:baseline).seconds,confidence:0,note:"Manual")}
+            _=installSynchronizationResults(candidates,referenceID:referenceID,baseline:baseline)
+        }catch{self.error=Self.message(error)}
+    }
     func cancelSynchronization(){syncTask?.cancel();syncGeneration+=1;synchronizing=false;syncCandidates=[];syncBaseline=nil;syncReferenceID=nil;if syncPreviewing{rebuild()}}
     func synchronizedCandidate()throws->ProjectDocument {
         guard let baseline=syncBaseline,document==baseline else{throw SynchronizationPreviewError.stale}
@@ -808,14 +817,28 @@ final class EditorStore: ObservableObject {
         for result in syncCandidates {
             guard result.offset.isFinite,abs(result.offset)<=86400 else{throw DocumentError.invalidTiming}
             let offset=result.exactOffset ?? RationalTime(value:Int64((result.offset*48000).rounded()),timescale:48000)
-            let anchor=try master.start.checkedSubtracting(master.sourceStart).checkedAdding(offset)
+            if result.correctDrift,let correction=result.correction {
+                next=try MulticamDriftCorrection.applying(correction,to:result.assetID,referenceID:referenceID,in:next,offsetAdjustmentSeconds:result.offset-correction.sourceOrigin).document
+                continue
+            }
+            guard master.speed==1 else{throw DriftCorrectionError.unsupportedContext}
+            let anchor=try Self.synchronizationSourceOrigin(master,in:baseline).checkedAdding(offset)
+            let targetClips=next.sequence.tracks.flatMap(\.clips).filter{$0.assetID==result.assetID}
+            let sharedStarts:[UUID:RationalTime]?
+            if targetClips.contains(where:{$0.speed != 1}),let first=targetClips.min(by:{$0.start<$1.start}){
+                let origin=try Self.synchronizationSourceOrigin(first,in:next)
+                sharedStarts=try DriftTimingGrid.translationStarts(for:targetClips,deltaSeconds:anchor.seconds-origin.seconds,sampleRate:next.sequence.settings.audioSampleRate)
+            }else{sharedStarts=nil}
             for t in next.sequence.tracks.indices {
                 for c in next.sequence.tracks[t].clips.indices where next.sequence.tracks[t].clips[c].assetID==result.assetID {
                     guard !next.sequence.tracks[t].isLocked else{throw DocumentError.lockedTrack}
                     var clip=next.sequence.tracks[t].clips[c]
-                    let start=try anchor.checkedAdding(clip.sourceStart)
-                    if start < .zero {let trim=try RationalTime.zero.checkedSubtracting(start);guard clip.duration>trim else{throw DocumentError.sourceBoundary};clip.sourceStart=try clip.sourceStart.checkedAdding(trim);clip.duration=try clip.duration.checkedSubtracting(trim);clip.volume.evaluationOffset=try clip.volume.evaluationOffset.checkedAdding(trim);clip.opacity.evaluationOffset=try clip.opacity.evaluationOffset.checkedAdding(trim);if let animation=clip.title?.animation{clip.title?.animation=try animation.windowed(by:trim)}}
-                    clip.start=try next.sequence.tracks[t].kind == .audio ? max(.zero,start):next.sequence.settings.frameRate.checkedQuantized(max(.zero,start));next.sequence.tracks[t].clips[c]=clip
+                    let rate=Int64((clip.speed*1_000_000).rounded())
+                    let start=try sharedStarts?[clip.id] ?? anchor.checkedAdding(clip.sourceStart)
+                    if start < .zero {let trim=try RationalTime.zero.checkedSubtracting(start);guard clip.duration>trim else{throw DocumentError.sourceBoundary};clip.sourceStart=try clip.sourceStart.checkedAdding(trim.checkedScaled(by:rate,over:1_000_000));clip.duration=try clip.duration.checkedSubtracting(trim);clip.volume.evaluationOffset=try clip.volume.evaluationOffset.checkedAdding(trim);clip.opacity.evaluationOffset=try clip.opacity.evaluationOffset.checkedAdding(trim);if let animation=clip.title?.animation{clip.title?.animation=try animation.windowed(by:trim)}}
+                    clip.start=try clip.speed != 1 || next.sequence.tracks[t].kind == .audio ? max(.zero,start):next.sequence.settings.frameRate.checkedQuantized(max(.zero,start))
+                    if let asset=next.assets.first(where:{$0.id==clip.assetID}),try clip.sourceStart.checkedAdding(clip.duration.checkedScaled(by:rate,over:1_000_000))>asset.duration{throw DocumentError.sourceBoundary}
+                    next.sequence.tracks[t].clips[c]=clip
                 }
             }
         }
@@ -968,6 +991,8 @@ struct CameraSyncCandidate:Identifiable {
     var drift:Double? = nil
     var note:String? = nil
     var exactOffset:RationalTime? = nil
+    var correction:AffineDriftCorrection? = nil
+    var correctDrift=false
 }
 enum CameraSyncMethod:String,CaseIterable{case waveform,timecode}
 enum SynchronizationPreviewError:LocalizedError{case stale;var errorDescription:String?{"Project changed. Synchronize again."}}
