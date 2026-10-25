@@ -115,7 +115,12 @@ animated effect clocks use the same checked rendering path; regression fixtures
 include large prime-denominator source starts and high rational frame rates.
 
 Automation clipboard is bounded to 10,000 points/1 MB. It copies stored visible
-knots without adding implicit guards; multi-point selection/editing remains open.
+knots without adding implicit guards. Shift-click and Select Visible build point
+groups for time/level moves, curve changes, copy and delete as one undoable edit.
+Group moves preserve spacing and reject collisions or out-of-range results atomically.
+Volume group level changes below the graph's −60 dB floor require individual edits;
+individual numeric controls retain quieter levels and silence. Animation beyond
+volume/opacity remains open.
 Camcorder formats are fixed ISO date/24-hour time, with an explicit fixed UTC offset.
 
 Local full native/helper verification: 205 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
