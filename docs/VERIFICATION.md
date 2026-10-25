@@ -1,7 +1,34 @@
-# Verification: 2026-10-21
+# Verification
 
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
+
+## Latest run: 2026-10-25
+
+The full local native/helper suite passes: **224 tests across 10 suites in
+31.629 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.
+The optimized app build and ad-hoc signing verification pass.
+
+The clock-correction fixture uses four-minute camera recordings and a separate
+master. It measures actual waveform anchors, compares early/late visual markers,
+proves an offset-only control remains wrong late in the recording, and verifies
+Preview/Cancel, save/reopen, ProRes/WAV range output and unchanged source hashes.
+The compared two-second master windows contain exactly 192,000 interleaved stereo
+samples before and after correction, with maximum difference zero. Exported PCM
+is checked within 16-bit quantization tolerance. Additional native cases cover
+adjacent and gapped fragments at 1.0001× and 1.000237×.
+
+These fixtures reproduced an AVFoundation range-read stall with a valid rational
+camera start. Canonical native endpoint mapping fixes that case while preserving
+the exact document. Tests also check shared boundaries, sample precision and
+long-timeline half-tick rounding. This does not establish the complete VFR/codec
+matrix or the full Phase 2 workflow gate.
+
+Grouped volume/opacity point edits retain exact undo, spacing and persistence and
+match decoded preview/export output. The opt-in documentation capture passes and
+produces the three inspected [workspace images](screenshots/README.md).
+
+## Earlier foundation evidence
 
 After filesystem/host access was expanded, native media services worked. Earlier
 sandbox VideoToolbox failures are historical and are no longer the current test

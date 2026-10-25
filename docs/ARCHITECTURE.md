@@ -75,5 +75,12 @@ affine fit validates its middle anchor. Reviewed corrections use existing clip
 source ranges and six-decimal speed settings, without changing original media or
 adding a project schema. A common rational grid preserves adjacent fragment
 boundaries. The UI keeps an immutable baseline for Preview/Apply and leaves the
-persistent master and camera decision events unchanged. Native range-export
-verification of this slice remains open; see STATUS.md.
+persistent master and camera decision events unchanged.
+
+AVFoundation composition boundaries use a canonical native clock: 600,000 ticks
+per second for video and the project sample rate for audio targets. Audio sources
+use their sample clock. Absolute endpoints are mapped before deriving durations,
+so shared boundaries cannot acquire independent rounding gaps. Document timing,
+source windows and render-parameter evaluation remain rational and unchanged.
+This boundary mapping prevents a reproduced native range-read stall with otherwise
+valid prime-denominator retimed placements. Preview and export share the compiler.

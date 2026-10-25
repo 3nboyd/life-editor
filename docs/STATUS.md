@@ -30,7 +30,7 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
 
-- Drift correction preview and richer direct cut refinement.
+- Broader drift-correction coverage and richer direct cut refinement.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse and speed ramps; broader freeze integration.
@@ -123,5 +123,19 @@ individual numeric controls retain quieter levels and silence. Animation beyond
 volume/opacity remains open.
 Camcorder formats are fixed ISO date/24-hour time, with an explicit fixed UTC offset.
 
-Local full native/helper verification: 205 tests pass. Optimized ad-hoc app build passes. These measurements are from the local
+Waveform synchronization now offers opt-in clock correction with early/middle/late
+source/master anchors, confidence and uncertainty. Preview leaves the project
+unchanged; Apply is one undoable edit. The persistent master, camera cuts and
+original files remain unchanged. Manual offset review remains available after
+correction. Native integration checks early/late frame alignment, exact master
+samples, save/reopen and decoded range exports.
+
+Automatic clock correction currently requires at least three minutes of shared
+audio, reliable local matches separated by at least two minutes, and a consistent
+clock within approximately ±1%. The initial offset search is ±120 seconds. It
+accepts dedicated, unretimed camera tracks referenced to the group's master;
+negative preroll, reused tracks, external links, transitions and artistic slips
+require manual preparation. Ambiguous recordings remain manually alignable.
+
+Local full native/helper verification: 224 tests pass (2026-10-25). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
