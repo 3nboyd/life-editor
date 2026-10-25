@@ -14,7 +14,7 @@ struct EffectBrowser:View {
     private var asset:MediaAsset?{store.document.assets.first{$0.id==store.selectedClip?.assetID && $0.kind != .audio}}
     var body:some View {
         VStack(spacing:12){
-            HStack{Picker("Effects",selection:$category){if !store.selectedIsAdjustment{Text("Transitions").tag(2)};Text("Filters").tag(0);Text("Adjust").tag(1)}.pickerStyle(.segmented)
+            HStack{Picker("Effects",selection:$category){if !store.selectedIsAdjustment{Text("Transitions").tag(2)};Text("Filters").tag(0);Text("Adjust").tag(1)}.pickerStyle(.segmented).labelsHidden()
                 if store.selectedIsAdjustment{
                     Button{layerControls.toggle()}label:{Image(systemName:"slider.horizontal.3").frame(width:24,height:24)}.help("Layer timing and opacity").accessibilityLabel("Layer timing and opacity").popover(isPresented:$layerControls){
                         VStack(spacing:12){
