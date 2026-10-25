@@ -41,7 +41,7 @@ struct TimelineSurface: NSViewRepresentable {
     private var thumbnailMetadataPoll=Date.distantPast
     var drag: Drag?
     private enum AutomationDragMode { case point(UUID),base,fadeIn,fadeOut }
-    private struct AutomationDrag { var clipID:UUID;var lane:AutomationLane;var mode:AutomationDragMode;var origin:NSPoint;var envelope:AutomationEnvelope }
+    private struct AutomationDrag { var clipID:UUID;var lane:AutomationLane;var mode:AutomationDragMode;var origin:NSPoint;var envelope:AutomationEnvelope;var selectedIDs:Set<UUID>=[] }
     private var automationDrag:AutomationDrag?
     var ghost: NSRect?
     var snapX: Double?
@@ -56,12 +56,12 @@ struct TimelineSurface: NSViewRepresentable {
     private var sampleTasks:[String:Task<Void,Never>]=[:]
     private var accessibilityItems:[NSAccessibilityElement]=[]
     private struct AccessibilitySignature: Equatable {
-        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double;var layoutRevision:Int
+        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double;var layoutRevision:Int;var automationSelection:Set<UUID>;var lane:AutomationLane
     }
     private var accessibilitySignature: AccessibilitySignature?
     private(set) var accessibilityRebuildCount=0
     func refreshAccessibility(){
-        let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision)
+        let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision,automationSelection:store.selectedAutomationPointIDs,lane:store.automationLane)
         guard signature != accessibilitySignature else { return }
         accessibilitySignature=signature; accessibilityRebuildCount += 1
         var elements:[NSAccessibilityElement]=[]
@@ -79,6 +79,22 @@ struct TimelineSurface: NSViewRepresentable {
                 let frame=convert(rect(clip,row:row),to:nil)
                 element.setAccessibilityFrame(window?.convertToScreen(frame) ?? frame)
                 elements.append(element)
+                if clip.id==store.selection {
+                    let lane=displayedAutomationLane(for:clip,track:track),envelope=lane == .volume ? clip.volume:clip.opacity
+                    for point in envelope.points where point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
+                        let center=automationPointPosition(point,envelope:envelope,clip:clip,box:rect(clip,row:row),lane:lane)
+                        let box=NSRect(x:center.x-8,y:center.y-8,width:16,height:16)
+                        guard box.intersects(visibleRect) else{continue}
+                        let pointElement=TimelineActionElement{[weak self] in
+                            guard let self,self.store.placementProposal == nil else{return false}
+                            self.store.automationLane=lane;self.store.selectAutomationPoint(point.id,toggle:true);self.needsDisplay=true;self.refreshAccessibility();return true
+                        }
+                        pointElement.setAccessibilityRole(.button);pointElement.setAccessibilityParent(self)
+                        pointElement.setAccessibilityLabel("Toggle "+lane.label.lowercased()+" point")
+                        pointElement.setAccessibilityValue(String(format:"%.5f seconds, ", (point.time-envelope.evaluationOffset).seconds)+AutomationScale.label(point.value*envelope.baseValue,lane:lane)+(store.selectedAutomationPointIDs.contains(point.id) ? ", selected":", unselected"))
+                        let pointFrame=convert(box,to:nil);pointElement.setAccessibilityFrame(window?.convertToScreen(pointFrame) ?? pointFrame);elements.append(pointElement)
+                    }
+                }
             }
             for (index,label) in ["Mute","Hide","Lock"].enumerated(){
                 let element=TimelineActionElement { [weak self] in
@@ -352,7 +368,7 @@ struct TimelineSurface: NSViewRepresentable {
                 if store.selection == clip.id {
                     for point in envelope.points where point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
                         let center=automationPointPosition(point,envelope:envelope,clip:clip,box:box,lane:automationLane)
-                        let selected=store.selectedAutomationPoint == point.id
+                        let selected=store.selectedAutomationPointIDs.contains(point.id)
                         NSColor(white:selected ? 1:0.7,alpha:1).setFill()
                         let marker=NSBezierPath();marker.move(to:NSPoint(x:center.x,y:center.y-4));marker.line(to:NSPoint(x:center.x+4,y:center.y));marker.line(to:NSPoint(x:center.x,y:center.y+4));marker.line(to:NSPoint(x:center.x-4,y:center.y));marker.close();marker.fill()
                         if selected { NSColor.black.setStroke();marker.lineWidth=1;marker.stroke() }
@@ -435,8 +451,6 @@ struct TimelineSurface: NSViewRepresentable {
         }
         store.selectedTransition=nil
         guard let clip=track.clips.first(where:{rect($0,row:row).contains(point)}) else { store.selection=nil;store.seek((point.x-header)/store.pixelsPerSecond);return }
-        if event.modifierFlags.contains(.shift){store.toggleSelection(clip.id)}else if !store.selectedIDs.contains(clip.id){store.selectedIDs=[clip.id];store.selection=clip.id}else{store.selection=clip.id}
-        if event.clickCount==2 { store.panel=clip.title == nil ? .clip : .title;return }
         let box=rect(clip,row:row),automationLane=displayedAutomationLane(for:clip,track:track)
         let envelope=automationLane == .volume ? clip.volume:clip.opacity
         let keyframes=envelope.points.filter { $0.time>=envelope.evaluationOffset && $0.time<=envelope.evaluationOffset+clip.duration }
@@ -444,10 +458,14 @@ struct TimelineSurface: NSViewRepresentable {
             let center=automationPointPosition(keyframe,envelope:envelope,clip:clip,box:box,lane:automationLane)
             return hypot(center.x-point.x,center.y-point.y)<=7
         }) {
-            store.selectedAutomationPoint=keyframe.id
-            if !track.isLocked { automationDrag=AutomationDrag(clipID:clip.id,lane:automationLane,mode:.point(keyframe.id),origin:point,envelope:envelope);store.beginGesture() }
+            if store.selection != clip.id {store.selectedIDs=[clip.id];store.selection=clip.id}
+            store.automationLane=automationLane
+            store.selectAutomationPoint(keyframe.id,toggle:event.modifierFlags.contains(.shift),preserveGroup:true)
+            if !track.isLocked,store.selectedAutomationPointIDs.contains(keyframe.id) { automationDrag=AutomationDrag(clipID:clip.id,lane:automationLane,mode:.point(keyframe.id),origin:point,envelope:envelope,selectedIDs:Set(store.selectedVisibleAutomationPoints.map(\.id)));store.beginGesture() }
             needsDisplay=true;return
         }
+        if event.modifierFlags.contains(.shift){store.toggleSelection(clip.id)}else if !store.selectedIDs.contains(clip.id){store.selectedIDs=[clip.id];store.selection=clip.id}else{store.selection=clip.id}
+        if event.clickCount==2 { store.panel=clip.title == nil ? .clip : .title;return }
         let local=min(clip.duration.seconds,max(0,(point.x-header)/store.pixelsPerSecond-clip.start.seconds))
         let lineY=automationY(envelope.value(at:store.time(local,audio:true)),box:box,lane:automationLane)
         if event.modifierFlags.contains(.command),abs(point.y-lineY)<=9 {
@@ -473,14 +491,27 @@ struct TimelineSurface: NSViewRepresentable {
         if let gesture=automationDrag,let clip=store.selectedClip,clip.id == gesture.clipID,let row=tracks.firstIndex(where: { $0.clips.contains { $0.id == clip.id } }) {
             let point=convert(event.locationInWindow,from:nil),box=rect(clip,row:row)
             snapX=nil;snapLabel=nil
-            var sequenceTime=min(clip.end.seconds,max(clip.start.seconds,(point.x-header)/store.pixelsPerSecond))
+            let grouped=gesture.selectedIDs.count>1
+            var sequenceTime=(point.x-header)/store.pixelsPerSecond
+            if grouped,case .point(let id)=gesture.mode,let anchor=gesture.envelope.points.first(where:{$0.id==id}),let local=try? anchor.time.checkedSubtracting(gesture.envelope.evaluationOffset) {
+                sequenceTime=clip.start.seconds+local.seconds+(point.x-gesture.origin.x)/store.pixelsPerSecond
+            } else {sequenceTime=min(clip.end.seconds,max(clip.start.seconds,sequenceTime))}
             let excludedPoint:UUID?
             if case .point(let id)=gesture.mode { excludedPoint=id } else { excludedPoint=nil }
-            if store.snapping && !event.modifierFlags.contains(.option),let snap=snappedTime(sequenceTime,excludingPoint:excludedPoint) {
-                sequenceTime=min(clip.end.seconds,max(clip.start.seconds,snap.time));snapX=x(sequenceTime);snapLabel=snap.label
+            if store.snapping && !event.modifierFlags.contains(.option),let snap=snappedTime(sequenceTime,excludingPoint:excludedPoint,excludingPoints:gesture.selectedIDs) {
+                sequenceTime=grouped ? snap.time:min(clip.end.seconds,max(clip.start.seconds,snap.time));snapX=x(sequenceTime);snapLabel=snap.label
             }
             switch gesture.mode {
-            case .point(let id):store.updateAutomationPoint(id:id,sequenceTime:sequenceTime,effectiveValue:automationValue(point.y,box:box,lane:gesture.lane))
+            case .point(let id):
+                if grouped {
+                    guard let anchor=gesture.envelope.points.first(where:{$0.id==id}) else{return}
+                    let originalValue=anchor.value*gesture.envelope.baseValue
+                    let levelDelta=(gesture.origin.y-point.y)/max(12,min(80,box.height-34))
+                    let position=AutomationScale.position(originalValue,lane:gesture.lane)+levelDelta
+                    guard (0...1).contains(position) else{snapX=nil;snapLabel=nil;return}
+                    let value=levelDelta==0 ? originalValue:AutomationScale.value(position,lane:gesture.lane)
+                    guard store.updateSelectedAutomationPoints(anchorID:id,sequenceTime:sequenceTime,effectiveValue:value,source:gesture.envelope,ids:gesture.selectedIDs,reportErrors:false) else {snapX=nil;snapLabel=nil;return}
+                } else {store.updateAutomationPoint(id:id,sequenceTime:sequenceTime,effectiveValue:automationValue(point.y,box:box,lane:gesture.lane))}
             case .base:
                 let value=gesture.lane == .volume ? (gesture.envelope.baseValue == 0 ? AutomationScale.value((gesture.origin.y-point.y)/40,lane:.volume):gesture.envelope.baseValue*pow(10,(gesture.origin.y-point.y)*0.75/20)):gesture.envelope.baseValue+(gesture.origin.y-point.y)/30
                 store.setAutomationBase(max(0,min(gesture.lane.maximumValue,value)));snapX=nil;snapLabel=nil
@@ -594,7 +625,7 @@ struct TimelineSurface: NSViewRepresentable {
     }
     private var timeGridStep: Double { [0.01,0.05,0.1,0.25,0.5,1,2,5,10,30,60,120,300].first { $0>=80/store.pixelsPerSecond } ?? 600 }
     /// Explicit edits take priority over a closer ordinary grid division, within eight screen pixels.
-    func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil) -> (time:Double,label:String)? {
+    func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil,excludingPoints:Set<UUID> = []) -> (time:Double,label:String)? {
         var explicit:[(time:Double,label:String)]=store.timelineDocument.sequence.tracks.flatMap(\.clips).filter { !excluding.contains($0.id) }.flatMap { [($0.start.seconds,"Clip"),($0.end.seconds,"Clip")] }
         for marker in store.timelineDocument.sequence.markers {
             guard let range=MarkerResolver.sequenceRange(marker,in:store.timelineDocument) else { continue }
@@ -603,7 +634,7 @@ struct TimelineSurface: NSViewRepresentable {
         }
         for clip in store.timelineDocument.sequence.tracks.flatMap(\.clips) where !excluding.contains(clip.id) {
             for envelope in [clip.volume,clip.opacity] {
-                for point in envelope.points where point.id != excludingPoint && point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
+                for point in envelope.points where point.id != excludingPoint && !excludingPoints.contains(point.id) && point.time>=envelope.evaluationOffset && point.time<=envelope.evaluationOffset+clip.duration {
                     explicit.append((clip.start.seconds+(point.time-envelope.evaluationOffset).seconds,"Point"))
                 }
             }
@@ -652,6 +683,8 @@ struct TimelineSurface: NSViewRepresentable {
     }
     override func keyDown(with event:NSEvent) {
         if store.placementProposal != nil {if event.keyCode==123{store.step(-1)}else if event.keyCode==124{store.step(1)};return}
+        if event.keyCode==27 {store.selectAutomationPoint(nil);needsDisplay=true;return}
+        if event.modifierFlags.contains([.command,.option]),event.charactersIgnoringModifiers=="a" {store.selectAllVisibleAutomationPoints();needsDisplay=true;return}
         if !event.isARepeat,store.panel == .multicam,let chars=event.charactersIgnoringModifiers,let digit=Int(chars),(1...9).contains(digit),store.visibleAngles.indices.contains(digit-1) {store.chooseAngle(store.visibleAngles[digit-1].id);return}
         if event.modifierFlags.contains(.option),(event.keyCode==125 || event.keyCode==126) {
             let id=layoutTrackSelection ?? tracks.first(where:{$0.clips.contains{$0.id==store.selection}})?.id ?? tracks.first?.id

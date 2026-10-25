@@ -61,13 +61,15 @@ struct AutomationControls:View {
                 Button{store.selectAdjacentAutomationPoint(1)}label:{Image(systemName:"forward.end")}.help("Next point · ⌥]").accessibilityLabel("Next automation point").keyboardShortcut("]",modifiers:.option)
             }
             HStack{
+                Button{store.selectAllVisibleAutomationPoints()}label:{Image(systemName:"checkmark.circle")}.disabled(store.visibleAutomationPoints.isEmpty).help("Select visible points · ⌥⌘A").accessibilityLabel("Select all visible automation points").keyboardShortcut("a",modifiers:[.command,.option])
                 Menu{
-                    Button("Point"){store.copyAutomationPoint()}.disabled(store.currentAutomationPoint == nil).keyboardShortcut("c",modifiers:[.command,.option])
+                    Button(store.selectedVisibleAutomationPoints.count>1 ? "Selected points":"Point"){store.copyAutomationPoint()}.disabled(store.currentAutomationPoint == nil).keyboardShortcut("c",modifiers:[.command,.option])
                     Button("Visible points"){store.copyVisibleAutomationPoints()}.disabled(store.visibleAutomationPoints.isEmpty).keyboardShortcut("c",modifiers:[.command,.option,.shift])
                 }label:{Image(systemName:"doc.on.doc").frame(width:24,height:24)}.menuStyle(.borderlessButton).fixedSize().help("Copy automation points · ⌥⌘C").accessibilityLabel("Copy automation points")
                 Button{store.pasteAutomationPoints()}label:{Image(systemName:"doc.on.clipboard").frame(width:24,height:24)}.disabled(store.selectedClip == nil || store.placementProposal != nil).help("Paste automation points at playhead · ⌥⌘V").accessibilityLabel("Paste automation points at playhead").keyboardShortcut("v",modifiers:[.command,.option])
                 Spacer()
             }
+            if store.selectedVisibleAutomationPoints.count>1 {HStack{Text("\(store.selectedVisibleAutomationPoints.count) points");if store.selectedVisibleAutomationPoints.contains(where:{$0.interpolation != store.currentAutomationPoint?.interpolation}){Text("Mixed curves").foregroundStyle(.secondary)}}.font(.caption)}
             if let point=store.currentAutomationPoint,let clip=store.selectedClip {
                 HStack{
                     Text("Time")
@@ -78,6 +80,6 @@ struct AutomationControls:View {
                     Text("Linear").tag(Interpolation.linear);Text("Ease").tag(Interpolation.eased);Text("Hold").tag(Interpolation.hold)
                 }.pickerStyle(.segmented).accessibilityLabel("Automation curve after selected point")
             }
-        }.font(.system(size:12)).onAppear{if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.selection){if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.automationLane){refresh()}.onChange(of:store.selectedAutomationPoint){refresh()}.onChange(of:store.currentAutomationEnvelope){refresh()}
+        }.font(.system(size:12)).onAppear{if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.selection){if store.selectedIsAdjustment{store.automationLane = .opacity};refresh()}.onChange(of:store.automationLane){refresh()}.onChange(of:store.selectedAutomationPoint){refresh()}.onChange(of:store.selectedAutomationPointIDs){refresh()}.onChange(of:store.currentAutomationEnvelope){refresh()}
     }
 }

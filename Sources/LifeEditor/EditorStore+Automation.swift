@@ -15,8 +15,8 @@ extension EditorStore {
     var currentAutomationPoint: AutomationPoint? { visibleAutomationPoints.first { $0.id == selectedAutomationPoint } }
     func automationLocalTime(_ point:AutomationPoint)->Double { (point.time-currentAutomationEnvelope.evaluationOffset).seconds }
     func copyAutomationPoint(to pasteboard:NSPasteboard = .general){
-        guard let point=currentAutomationPoint else{error=AutomationClipboardError.selection.localizedDescription;return}
-        copyAutomationPoints([point],to:pasteboard)
+        guard !selectedVisibleAutomationPoints.isEmpty else{error=AutomationClipboardError.selection.localizedDescription;return}
+        copyAutomationPoints(selectedVisibleAutomationPoints,to:pasteboard)
     }
     func copyVisibleAutomationPoints(to pasteboard:NSPasteboard = .general){copyAutomationPoints(visibleAutomationPoints,to:pasteboard)}
     private func copyAutomationPoints(_ points:[AutomationPoint],to pasteboard:NSPasteboard){
@@ -65,8 +65,90 @@ extension EditorStore {
                     }
                 }
             }
-            if success{selectedAutomationPoint=selected}
+            if success{selectAutomationPoint(selected)}
         }catch{self.error=(error as? LocalizedError)?.errorDescription ?? "The clipboard contains invalid automation points."}
+    }
+    var selectedVisibleAutomationPoints:[AutomationPoint]{visibleAutomationPoints.filter{selectedAutomationPointIDs.contains($0.id)}}
+    func reconcileAutomationSelection(){
+        let visible=visibleAutomationPoints
+        selectedAutomationPointIDs.formIntersection(Set(visible.map(\.id)))
+        if let primary=selectedAutomationPoint,selectedAutomationPointIDs.contains(primary){return}
+        selectedAutomationPoint=visible.first{selectedAutomationPointIDs.contains($0.id)}?.id
+    }
+    func selectAutomationPoint(_ id:UUID?,toggle:Bool=false,preserveGroup:Bool=false){
+        guard let id else{selectedAutomationPoint=nil;return}
+        guard visibleAutomationPoints.contains(where:{$0.id==id}) else{return}
+        if toggle{
+            if selectedAutomationPointIDs.contains(id){selectedAutomationPointIDs.remove(id)}else{selectedAutomationPointIDs.insert(id)}
+            selectedAutomationPoint=selectedAutomationPointIDs.contains(id) ? id:visibleAutomationPoints.first{selectedAutomationPointIDs.contains($0.id)}?.id
+        }else{
+            if !preserveGroup || !selectedAutomationPointIDs.contains(id){selectedAutomationPointIDs=[id]}
+            selectedAutomationPoint=id
+        }
+    }
+    func selectAllVisibleAutomationPoints(){
+        selectedAutomationPointIDs=Set(visibleAutomationPoints.map(\.id))
+        selectedAutomationPoint=visibleAutomationPoints.first?.id
+    }
+    @discardableResult func updateSelectedAutomationPoints(anchorID:UUID,sequenceTime:Double?=nil,effectiveValue:Double?=nil,interpolation:Interpolation?=nil,source:AutomationEnvelope?=nil,ids:Set<UUID>?=nil,reportErrors:Bool=true)->Bool{
+        guard let clip=selectedClip else{return false}
+        let original=source ?? currentAutomationEnvelope,chosen=ids ?? Set(selectedVisibleAutomationPoints.map(\.id))
+        guard let anchor=original.points.first(where:{$0.id==anchorID}),chosen.contains(anchorID),!chosen.isEmpty else{return false}
+        var delta=RationalTime.zero,levelDelta=0.0
+        do {
+            let local=try anchor.time.checkedSubtracting(original.evaluationOffset)
+            if let sequenceTime{
+                guard sequenceTime.isFinite,sequenceTime>=clip.start.seconds,sequenceTime<=clip.end.seconds else{if reportErrors{error="Keep selected points inside the clip."};return false}
+                // Submitting an unchanged numeric time must retain its original rational exactly.
+                if sequenceTime != clip.start.seconds+local.seconds {
+                    delta=try time(sequenceTime-clip.start.seconds,audio:true).checkedSubtracting(local)
+                }
+            }
+        } catch {if reportErrors{self.error="Choose a representable point time."};return false}
+        if let effectiveValue{
+            guard effectiveValue.isFinite,(0...automationLane.maximumValue).contains(effectiveValue) else{return false}
+            let value=original.baseValue*anchor.value
+            levelDelta=AutomationScale.position(effectiveValue,lane:automationLane)-AutomationScale.position(value,lane:automationLane)
+            if chosen.count>1,automationLane == .volume,effectiveValue != value,(effectiveValue>0 && effectiveValue<0.001 || value>0 && value<0.001){if reportErrors{error="Edit points below −60 dB individually."};return false}
+        }
+        let lane=automationLane
+        return modifyAutomation(reportErrors:reportErrors){envelope,_ in
+            envelope=original
+            var projected:[UUID:RationalTime]=[:],levels:[UUID:Double]=[:],minimum=RationalTime.zero
+            for point in original.points where chosen.contains(point.id){
+                let local=try point.time.checkedSubtracting(original.evaluationOffset).checkedAdding(delta)
+                guard local >= .zero,local<=clip.duration else{throw AutomationGroupError.bounds}
+                let stored=try point.time.checkedAdding(delta);projected[point.id]=stored;minimum=min(minimum,stored)
+                let effective=original.baseValue*point.value
+                if levelDelta==0{levels[point.id]=effective}else{
+                    if chosen.count>1,lane == .volume,effective>0,effective<0.001{throw AutomationGroupError.quiet}
+                    let position=AutomationScale.position(effective,lane:lane)+levelDelta
+                    guard position >= -1e-12,position<=1+1e-12 else{throw AutomationGroupError.bounds}
+                    levels[point.id]=AutomationScale.value(position,lane:lane)
+                }
+            }
+            guard projected.count==chosen.count else{throw AutomationGroupError.bounds}
+            var times=Set<RationalTime>()
+            for point in original.points{
+                let candidate=projected[point.id] ?? point.time
+                guard times.insert(candidate).inserted else{throw AutomationGroupError.collision}
+            }
+            if minimum < .zero{
+                let shift=try RationalTime.zero.checkedSubtracting(minimum)
+                envelope.evaluationOffset=try envelope.evaluationOffset.checkedAdding(shift)
+                for index in envelope.points.indices{envelope.points[index].time=try envelope.points[index].time.checkedAdding(shift)}
+                for (id,value) in projected{projected[id]=try value.checkedAdding(shift)}
+            }
+            if levelDelta != 0{
+                let needsBase=levels.values.contains{value in envelope.baseValue==0 ? value>0:!(value/envelope.baseValue).isFinite || (value/envelope.baseValue)*envelope.baseValue>lane.maximumValue}
+                if needsBase{let old=envelope.baseValue;for i in envelope.points.indices{envelope.points[i].value*=old};envelope.baseValue=1}
+            }
+            for index in envelope.points.indices where chosen.contains(envelope.points[index].id){
+                let id=envelope.points[index].id;envelope.points[index].time=projected[id]!
+                if levelDelta != 0{envelope.points[index].value=envelope.baseValue>0 ? levels[id]!/envelope.baseValue:0}
+                if let interpolation{envelope.points[index].interpolation=interpolation}
+            }
+        }
     }
     func setAutomationBase(_ value:Double) {
         guard value.isFinite,value>=0 else { error="Enter a finite level.";return }
@@ -92,9 +174,12 @@ extension EditorStore {
                 let point=AutomationPoint(time:time,value:value);envelope.points.append(point);added=point.id
             }
         }
-        if success { selectedAutomationPoint=added };return success ? added:nil
+        if success { selectAutomationPoint(added) };return success ? added:nil
     }
     func updateAutomationPoint(id:UUID,sequenceTime:Double? = nil,effectiveValue:Double? = nil,interpolation:Interpolation? = nil) {
+        if selectedVisibleAutomationPoints.count>1,selectedAutomationPointIDs.contains(id){
+            updateSelectedAutomationPoints(anchorID:id,sequenceTime:sequenceTime,effectiveValue:effectiveValue,interpolation:interpolation);return
+        }
         guard sequenceTime?.isFinite ?? true,effectiveValue?.isFinite ?? true else { error="Enter a finite point time and value.";return }
         let success=modifyAutomation { envelope,clip in
             guard envelope.points.contains(where: { $0.id == id }) else { throw DocumentError.clipNotFound }
@@ -117,8 +202,8 @@ extension EditorStore {
         if success { selectedAutomationPoint=id }
     }
     func deleteAutomationPoint() {
-        guard let id=currentAutomationPoint?.id else { return }
-        if modifyAutomation({ envelope,_ in envelope.points.removeAll { $0.id == id } }) { selectedAutomationPoint=nil }
+        let ids=Set(selectedVisibleAutomationPoints.map(\.id));guard !ids.isEmpty else{return}
+        if modifyAutomation({envelope,_ in envelope.points.removeAll{ids.contains($0.id)}}){selectAutomationPoint(nil)}
     }
     func selectAdjacentAutomationPoint(_ direction:Int) {
         guard let clip=selectedClip else { return }
@@ -128,7 +213,7 @@ extension EditorStore {
             let next=index+(direction<0 ? -1:1);point=points.indices.contains(next) ? points[next]:points[index]
         } else if direction<0 { point=points.last(where: { clip.start.seconds+automationLocalTime($0)<playhead }) ?? points.first }
         else { point=points.first(where: { clip.start.seconds+automationLocalTime($0)>playhead }) ?? points.last }
-        selectedAutomationPoint=point?.id
+        selectAutomationPoint(point?.id)
         if let point { seek(clip.start.seconds+automationLocalTime(point)) }
     }
     func setLaneFade(_ seconds:Double,incoming:Bool,source:AutomationEnvelope? = nil) {
@@ -157,11 +242,12 @@ extension EditorStore {
         guard envelope.value(at:clip.duration)==0,let prior=points.last(where: { $0.time<offset+clip.duration && $0.value>0 }) else { return 0 }
         return min(clip.duration.seconds,clip.duration.seconds-(prior.time-offset).seconds)
     }
-    private func modifyAutomation(_ mutation:(inout AutomationEnvelope,Clip)throws->Void)->Bool {
+    private func modifyAutomation(reportErrors:Bool=true,_ mutation:(inout AutomationEnvelope,Clip)throws->Void)->Bool {
+        guard placementProposal == nil else{if reportErrors{error="Apply or cancel the placement preview first."};return false}
         guard let clip=selectedClip,let track=document.sequence.tracks.first(where: { $0.clips.contains { $0.id == clip.id } }) else { return false }
-        guard !track.isLocked else { error="Unlock the track to edit.";return false }
+        guard !track.isLocked else { if reportErrors{error="Unlock the track to edit."};return false }
         var envelope=automationLane == .volume ? clip.volume:clip.opacity
-        do { try mutation(&envelope,clip) } catch { self.error="The automation point time or value is unavailable.";return false }
+        do { try mutation(&envelope,clip) } catch { if reportErrors{self.error=(error as? LocalizedError)?.errorDescription ?? "The automation point time or value is unavailable."};return false }
         var next=document
         for t in next.sequence.tracks.indices {
             if let c=next.sequence.tracks[t].clips.firstIndex(where: { $0.id == clip.id }) {
@@ -169,7 +255,7 @@ extension EditorStore {
                 else { next.sequence.tracks[t].clips[c].opacity=envelope }
             }
         }
-        do { try next.validate() } catch { self.error="The automation value exceeds the supported range.";return false }
+        do { try next.validate() } catch { if reportErrors{self.error="The automation value exceeds the supported range."};return false }
         replace(next);return document == next
     }
     private func rebaseAutomationIfNeeded(_ envelope:inout AutomationEnvelope,local:RationalTime)throws {
@@ -182,4 +268,13 @@ extension EditorStore {
     private func ensureAutomationBase(_ envelope:inout AutomationEnvelope,for effective:Double) {
         if envelope.baseValue == 0 && effective > 0 { envelope.baseValue=1;for i in envelope.points.indices { envelope.points[i].value=0 } }
     }
+}
+
+private enum AutomationGroupError:Error,LocalizedError{
+    case bounds,collision,quiet
+    var errorDescription:String?{switch self{
+    case .bounds:return "Keep selected points inside the clip and level range."
+    case .collision:return "Selected points would overlap another point."
+    case .quiet:return "Edit points below −60 dB individually."
+    }}
 }

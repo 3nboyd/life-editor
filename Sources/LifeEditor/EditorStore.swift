@@ -67,8 +67,12 @@ final class EditorStore: ObservableObject {
     var timelineDocument:ProjectDocument{placementProposal?.document ?? document}
     @Published var selectedTransition:UUID?{didSet{if oldValue != selectedTransition{cancelColorSampling()}}}
     @Published var selectedIDs:Set<UUID>=[]
-    @Published var selectedAutomationPoint:UUID?
-    @Published var automationLane:AutomationLane = .volume
+    @Published var selectedAutomationPointIDs=Set<UUID>()
+    @Published var selectedAutomationPoint:UUID?{didSet{
+        if let id=selectedAutomationPoint{if !selectedAutomationPointIDs.contains(id){selectedAutomationPointIDs=[id]}}
+        else{selectedAutomationPointIDs=[]}
+    }}
+    @Published var automationLane:AutomationLane = .volume{didSet{if oldValue != automationLane{selectedAutomationPoint=nil}}}
     @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]};if oldValue != selection{cancelColorSampling();selectedAutomationPoint=nil;automationLane=selectedUsesOpacity ? .opacity:.volume}}}
     @Published var playheadTime:RationalTime = .zero
     var playhead:Double {get{playheadTime.seconds}set{playheadTime=time(newValue,audio:true)}}
@@ -191,7 +195,7 @@ final class EditorStore: ObservableObject {
     func cancelPlacement(){placementProposal=nil;placementBaseline=nil;rebuild()}
     func changed() {
         audioMeasurementTask?.cancel(); measuringAudio=false; audioMeasurement=nil; audioMeters=[];normalization=nil;normalizationClip=nil
-        document = editor.document; dirty = true; MediaBookmarks().remember(document); scheduleRecovery(); rebuild()
+        document = editor.document; reconcileAutomationSelection(); dirty = true; MediaBookmarks().remember(document); scheduleRecovery(); rebuild()
     }
     func undo() { if placementProposal != nil{cancelPlacement();return};editor.undo(); changed() }
     func redo() { if placementProposal != nil{cancelPlacement();return};editor.redo(); changed() }
