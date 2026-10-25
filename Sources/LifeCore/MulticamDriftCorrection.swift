@@ -35,7 +35,7 @@ public struct AffineDriftCorrection:Equatable,Sendable {
         guard slope.isFinite,(0.99...1.01).contains(slope) else{throw DriftCorrectionError.unreliable}
         let speed=(1/slope*1_000_000).rounded()/1_000_000
         let origin=early.referenceSeconds-early.sourceSeconds/speed
-        let residual=abs(origin+middle.sourceSeconds/speed-middle.referenceSeconds)
+        let residual=max(abs(origin+middle.sourceSeconds/speed-middle.referenceSeconds),abs(origin+late.sourceSeconds/speed-late.referenceSeconds))
         let uncertainty=max(early.uncertaintySeconds,middle.uncertaintySeconds,late.uncertaintySeconds)
         guard residual<=max(0.04,2*uncertainty) else{throw DriftCorrectionError.nonlinear}
         return .init(sourceOrigin:origin,speed:speed,confidence:min(early.confidence,middle.confidence,late.confidence),uncertaintySeconds:uncertainty,maxResidualSeconds:residual,early:early,middle:middle,late:late)
@@ -46,8 +46,9 @@ public struct DriftCorrectionProposal:Sendable {
     public let trimmedPrerollSeconds:Double
 }
 public enum MulticamDriftCorrection {
-    public static func applying(_ correction:AffineDriftCorrection,to assetID:UUID,referenceID:UUID,in document:ProjectDocument)throws->DriftCorrectionProposal {
+    public static func applying(_ correction:AffineDriftCorrection,to assetID:UUID,referenceID:UUID,in document:ProjectDocument,offsetAdjustmentSeconds:Double=0)throws->DriftCorrectionProposal {
         try document.validate()
+        guard offsetAdjustmentSeconds.isFinite,abs(offsetAdjustmentSeconds)<=86400 else{throw DriftCorrectionError.invalidRange}
         let groups=document.sequence.multicamGroups.filter{$0.angleAssetIDs.contains(assetID) || $0.masterAudioAssetID==assetID || ($0.audioAssetIDs?.contains(assetID) ?? false)}
         guard groups.count==1,let group=groups.first,group.angleAssetIDs.contains(assetID),group.masterAudioAssetID==referenceID,referenceID != assetID,
               let source=document.assets.first(where:{$0.id==assetID}),source.kind == .video,
@@ -68,6 +69,16 @@ public enum MulticamDriftCorrection {
         let originalOrigin=targets[0].start.seconds-targets[0].sourceStart.seconds
         guard targets.allSatisfy({abs(($0.start.seconds-$0.sourceStart.seconds)-originalOrigin)<=originTolerance}) else{throw DriftCorrectionError.unsupportedContext}
         let rate=Int64((correction.speed*1_000_000).rounded())
+        let firstSource=targets.map(\.sourceStart).min()!
+        var relative:[UUID:RationalTime]=[:],durations:[UUID:RationalTime]=[:]
+        for clip in targets {
+            relative[clip.id]=try clip.sourceStart.checkedSubtracting(firstSource).checkedScaled(by:1_000_000,over:rate)
+            durations[clip.id]=try clip.duration.checkedScaled(by:1_000_000,over:rate)
+        }
+        let grid=try DriftTimingGrid.scale(for:Array(relative.values)+Array(durations.values),sampleRate:document.sequence.settings.audioSampleRate)
+        let anchorSeconds=referenceOrigin+correction.sourceOrigin+firstSource.seconds/correction.speed+offsetAdjustmentSeconds
+        guard anchorSeconds>=0 else{throw DriftCorrectionError.negativePreroll}
+        let anchor=try DriftTimingGrid.time(seconds:anchorSeconds,scale:grid)
         var result=document
         func retime(_ envelope:AutomationEnvelope)throws->AutomationEnvelope {
             var value=envelope;value.evaluationOffset=try envelope.evaluationOffset.checkedScaled(by:1_000_000,over:rate)
@@ -81,17 +92,11 @@ public enum MulticamDriftCorrection {
                 var clip=result.sequence.tracks[track].clips[index]
                 let sourceEnd=try clip.sourceStart.checkedAdding(clip.duration)
                 guard sourceEnd<=source.duration else{throw DriftCorrectionError.invalidRange}
-                let seconds=referenceOrigin+correction.sourceOrigin+clip.sourceStart.seconds/correction.speed
-                guard seconds.isFinite,(0...86400).contains(seconds) else{throw seconds<0 ? DriftCorrectionError.negativePreroll:DriftCorrectionError.invalidRange}
-                // Analysis anchors have finite hop uncertainty. Positioning on
-                // the project sample grid avoids denominator explosions while
-                // retaining sourceStart and source windows at full precision.
-                let sampleRate=Int64(document.sequence.settings.audioSampleRate)
-                clip.start=RationalTime(value:Int64((seconds*Double(sampleRate)).rounded()),timescale:sampleRate)
-                clip.duration=try clip.duration.checkedScaled(by:1_000_000,over:rate)
+                clip.start=try anchor.checkedAdding(relative[clip.id]!)
+                clip.duration=durations[clip.id]!
                 clip.volume=try retime(clip.volume);clip.opacity=try retime(clip.opacity)
                 clip.speed=correction.speed
-                guard try clip.checkedSourceTime(at:clip.end)<=source.duration else{throw DriftCorrectionError.invalidRange}
+                guard try clip.sourceStart.checkedAdding(clip.duration.checkedScaled(by:rate,over:1_000_000))<=source.duration else{throw DriftCorrectionError.invalidRange}
                 result.sequence.tracks[track].clips[index]=clip
             }
         }

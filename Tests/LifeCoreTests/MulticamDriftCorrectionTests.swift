@@ -45,6 +45,31 @@ private func driftFit(_ slope:Double=1.001,_ origin:Double=2)throws->AffineDrift
     #expect(throws:DriftCorrectionError.invalidRange){try MulticamDriftCorrection.applying(correction,to:camera.id,referenceID:master.id,in:shortSource)}
     let negative=try driftFit(1.001,-2)
     #expect(throws:DriftCorrectionError.negativePreroll){try MulticamDriftCorrection.applying(negative,to:camera.id,referenceID:master.id,in:document)}
+    var boundedReference=document;boundedReference.assets[1].duration = .init(value:410,timescale:1);boundedReference.sequence.tracks[1].clips[0].duration = .init(value:410,timescale:1)
+    let delayed=try MulticamDriftCorrection.applying(correction,to:camera.id,referenceID:master.id,in:boundedReference,offsetAdjustmentSeconds:30)
+    #expect(abs(delayed.document.sequence.tracks[0].clips[0].start.seconds-proposal.document.sequence.tracks[0].clips[0].start.seconds-30)<1.0/48000)
+    #expect(correction.late.referenceSeconds<410 && correction.late.referenceSeconds+30>410)
+    #expect(delayed.document.sequence.tracks[0].clips[0].speed==correction.speed)
     var locked=document;locked.sequence.tracks[0].isLocked=true
     #expect(throws:DocumentError.lockedTrack){try MulticamDriftCorrection.applying(correction,to:camera.id,referenceID:master.id,in:locked)}
+}
+
+@MainActor @Test func driftCorrectionSharesExactFragmentGridForAdjacentAndGappedPrimeRates()throws {
+    for rate in [1.0001,1.000237] {
+        let source=MediaAsset(url:URL(fileURLWithPath:"/camera.mov"),kind:.video,duration:.init(value:600,timescale:1))
+        let master=MediaAsset(url:URL(fileURLWithPath:"/master.wav"),kind:.audio,duration:.init(value:600,timescale:1))
+        let clips=[0,100,250].map{Clip(assetID:source.id,start:.init(value:Int64($0),timescale:1),duration:.init(value:100,timescale:1),sourceStart:.init(value:Int64($0),timescale:1))}
+        let group=MulticamGroup(angleAssetIDs:[source.id],masterAudioAssetID:master.id,cuts:[.init(time:.zero,angleID:source.id)])
+        let document=ProjectDocument(sequence:Sequence(tracks:[Track(name:"Camera",kind:.video,clips:clips),Track(name:"Master",kind:.audio,clips:[Clip(assetID:master.id,duration:master.duration)])],multicamGroups:[group]),assets:[source,master])
+        func anchor(_ source:Double)->DriftAnchor{.init(sourceSeconds:source,referenceSeconds:0.1234567+source/rate,confidence:0.9,uncertaintySeconds:0.023)}
+        let correction=try AffineDriftCorrection.fit(early:anchor(20),middle:anchor(200),late:anchor(400))
+        let proposal=try MulticamDriftCorrection.applying(correction,to:source.id,referenceID:master.id,in:document)
+        let result=proposal.document.sequence.tracks[0].clips
+        #expect(result[0].end==result[1].start)
+        #expect(abs((result[2].start-result[1].end).seconds-50/rate)<0.000000001)
+        let starts=try DriftTimingGrid.translationStarts(for:result,deltaSeconds:0.13791,sampleRate:48000)
+        #expect(try starts[result[0].id]!.checkedAdding(result[0].duration)==starts[result[1].id]!)
+        #expect(try starts[result[2].id]!.checkedSubtracting(starts[result[1].id]!)==result[2].start-result[1].start)
+        #expect(result.map(\.sourceStart)==clips.map(\.sourceStart))
+    }
 }
