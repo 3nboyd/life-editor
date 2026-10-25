@@ -1,8 +1,31 @@
 # Life Editor
 
-A native, local Mac video editor in active development. Swift 6, macOS 15+,
-Apple Silicon. MIT licensed original code. No account, subscription, upload or
-watermark. Pre-1.0 development; see the [roadmap](docs/ROADMAP.md) for planned work.
+[![Source checks](https://github.com/3nboyd/life-editor/actions/workflows/ci.yml/badge.svg)](https://github.com/3nboyd/life-editor/actions/workflows/ci.yml)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-33383d)
+![Swift 6](https://img.shields.io/badge/Swift-6-e57546)
+[![MIT](https://img.shields.io/badge/license-MIT-8bb8b0)](LICENSE)
+
+A native Mac video editor with a large viewer, layered timeline and direct editing.
+Local media, local rendering. No account, subscription, upload or watermark.
+
+![Life Editor workspace: large composition viewer above a layered timeline with music, picture and titles](docs/screenshots/workspace.png)
+
+**Pre-1.0 development · Apple Silicon · macOS 15+**
+
+[Build from source](#build) · [Current status](docs/STATUS.md) · [Full roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md)
+
+## A quiet workspace
+
+The viewer stays large. Panels appear when needed; the timeline keeps pictures,
+audio and titles together. Volume handles and automation points edit one envelope.
+
+| Original looks | Audio and automation |
+|---|---|
+| ![Effects panel with visual filter thumbnails beside the composition](docs/screenshots/effects.png) | ![Audio controls and waveform automation in the native workspace](docs/screenshots/audio.png) |
+
+Native view captures use fictional, generated rehearsal imagery and a rendered
+poster frame in place of the hardware video layer. The controls and timeline are
+the application's own views. [Capture details and reproduction](docs/screenshots/README.md).
 
 ## Build
 
@@ -38,16 +61,17 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 ### Titles and effects
 
 - Fourteen transitions that stay within the available footage, with duration handles on the timeline.
-- Direct volume/opacity points, shared fades, curves, constant speed and pitch lock.
+- Direct volume/opacity points, grouped point editing, shared fades, curves, constant speed and pitch lock.
 - Editable multiline titles, six entrances, colors/backgrounds/outlines and viewer handles.
 - Shared color wheel, RGB/HEX, swatches and viewer sampling.
-- Sixteen original visual looks, sixteen adjustments and real media thumbnails.
+- Sixteen original visual looks, tonal adjustments and real media thumbnails.
 
 ### Audio and multicam
 
 - Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
 - Gain/pan/channel mapping/EQ, optional limiter and calibrated loudness measurement.
 - Multicam groups with four lightweight camera previews, suggested audio-waveform alignment, and manual timing offsets.
+- Reviewed clock-drift correction with source/master anchors, preview and one-step undo.
 - Continuous master audio by default; switch video, audio, or both, replace cuts within a selected range, and preview camera choices.
 
 ### Export and project recovery
