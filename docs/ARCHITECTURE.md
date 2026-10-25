@@ -61,3 +61,19 @@ is offered for review, never treated as proof of camera capture or replaced with
 a filesystem/current date. Core Text bitmaps are bounded and shared as immutable
 images. Render-only scalar clock fallbacks handle otherwise unrepresentable rational
 combinations without changing document, media, or automation timestamps.
+
+Automation point selection is transient UI state, scoped to one clip and lane.
+Group gestures evaluate from the original envelope and commit one validated
+command. Time translation preserves rational spacing; level translation uses the
+displayed parameter axis. Hidden source points survive trims. A shared envelope
+continues to supply numeric controls, timeline handles, playback and export.
+
+Clock-drift analysis returns three matched source/master anchors rather than
+inferring correction from unrelated recording tails. Coarse waveform correlation
+only centers the search; each local match must pass confidence checks. A bounded
+affine fit validates its middle anchor. Reviewed corrections use existing clip
+source ranges and six-decimal speed settings, without changing original media or
+adding a project schema. A common rational grid preserves adjacent fragment
+boundaries. The UI keeps an immutable baseline for Preview/Apply and leaves the
+persistent master and camera decision events unchanged. Native range-export
+verification of this slice remains open; see STATUS.md.
