@@ -307,7 +307,7 @@ extension RationalTime {
                 guard clip.duration.seconds > 0 else { continue }
                 let renderStart = transitions.first { $0.transition.rightClipID == clip.id }?.start ?? clip.start
                 let renderEnd = transitions.first { $0.transition.leftClipID == clip.id }?.end ?? clip.end
-                let clipEnd = CMTimeAdd(clip.start.cmTime, clip.duration.cmTime)
+                let clipEnd = try NativeCompositionClock.time(clip.end,scale:600000)
                 end = CMTimeMaximum(end, clipEnd)
                 if track.kind == .adjustment {
                     try AdjustmentLayers.validate(clip)
@@ -370,8 +370,10 @@ extension RationalTime {
                     let videoDuration = try (renderEnd - renderStart).checkedScaled(by: speed, over: 1_000_000)
                     guard videoStart.timescale <= Int64(Int32.max), videoDuration.timescale <= Int64(Int32.max),
                           videoStart >= .zero, videoStart + videoDuration <= RationalTime(value: available.value, timescale: Int64(available.timescale)) else { throw MediaError.invalidRange(reference.url.lastPathComponent) }
-                    try target.insertTimeRange(CMTimeRange(start: videoStart.cmTime, duration: videoDuration.cmTime), of: source, at: renderStart.cmTime)
-                    target.scaleTimeRange(CMTimeRange(start: renderStart.cmTime, duration: videoDuration.cmTime), toDuration: (renderEnd - renderStart).cmTime)
+                    let nativeSource=try NativeCompositionClock.range(from:videoStart,to:videoStart.checkedAdding(videoDuration),scale:600000)
+                    let nativeTarget=try NativeCompositionClock.range(from:renderStart,to:renderEnd,scale:600000)
+                    try target.insertTimeRange(nativeSource,of:source,at:nativeTarget.start)
+                    target.scaleTimeRange(CMTimeRange(start:nativeTarget.start,duration:nativeSource.duration),toDuration:nativeTarget.duration)
                     let transform = try await source.load(.preferredTransform)
                     layers.append(RenderLayer(trackID: target.trackID, clip: clip, transform: transform, titleImage: nil, multicam: group, renderStart: renderStart, renderEnd: renderEnd))
                 }
@@ -398,17 +400,39 @@ extension RationalTime {
                         guard let renderedTrack = try await intermediate.loadTracks(withMediaType: .audio).first else { throw MediaError.exportUnavailable }
                         audioSourceAsset = intermediate; audioSource = renderedTrack; audioSourceStart = .zero; renderedAudio = true
                     }
+                    let sourceScale:CMTimeScale
+                    if renderedAudio{sourceScale=48000}
+                    else{
+                        let descriptions=try await audioSource.load(.formatDescriptions)
+                        let rate=descriptions.first.flatMap{CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mSampleRate}
+                        guard let rate,rate.isFinite,rate>=1,rate<=Double(Int32.max) else{throw MediaError.invalidRange(reference.url.lastPathComponent)}
+                        sourceScale=CMTimeScale(rate.rounded())
+                    }
+                    let pcmEnd=renderedAudio ? try await audioSourceAsset.load(.duration):nil
+                    let targetScale=CMTimeScale(settings.audioSampleRate)
+                    func insertAudio(_ left:RationalTime,_ right:RationalTime,on track:AVMutableCompositionTrack)throws{
+                        let offset=try left.checkedSubtracting(clip.start)
+                        let endingOffset=try right.checkedSubtracting(clip.start)
+                        let rate=Int64((clip.speed*1_000_000).rounded())
+                        let sourceLeft=try audioSourceStart.checkedAdding(renderedAudio ? offset:offset.checkedScaled(by:rate,over:1_000_000))
+                        let sourceRight=try audioSourceStart.checkedAdding(renderedAudio ? endingOffset:endingOffset.checkedScaled(by:rate,over:1_000_000))
+                        let nativeSource=try NativeCompositionClock.range(from:sourceLeft,to:sourceRight,scale:sourceScale,pcmEnd:pcmEnd)
+                        let nativeTarget=try NativeCompositionClock.range(from:left,to:right,scale:targetScale)
+                        try track.insertTimeRange(nativeSource,of:audioSource,at:nativeTarget.start)
+                        // Source samples and project samples can quantize an
+                        // endpoint differently. Align the same absolute target
+                        // endpoints rather than accumulate per-fragment error.
+                        if CMTimeCompare(nativeSource.duration,nativeTarget.duration) != 0{
+                            track.scaleTimeRange(CMTimeRange(start:nativeTarget.start,duration:nativeSource.duration),toDuration:nativeTarget.duration)
+                        }
+                    }
                     let boundaries=Array(Set([clip.start,clip.end]+(group?.audioCuts ?? []).map(\.time).filter{$0>clip.start && $0<clip.end})).sorted()
                     for (left,right) in zip(boundaries,boundaries.dropFirst()) where group.map({MulticamSwitching.selectedAudio(in:$0,at:left)==assetID}) ?? true {
-                        let offset=left-clip.start
-                        let mappedOffset=renderedAudio ? offset : try offset.checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
-                        let mappedDuration=renderedAudio ? right-left : try (right-left).checkedScaled(by:Int64((clip.speed*1_000_000).rounded()),over:1_000_000)
-                        try target.insertTimeRange(CMTimeRange(start:(audioSourceStart+mappedOffset).cmTime,duration:mappedDuration.cmTime),of:audioSource,at:left.cmTime)
+                        try insertAudio(left,right,on:target)
                     }
                     audioRoutes.append(.init(trackID:target.trackID,assetID:assetID,clip:clip,envelope:envelope,group:group,candidate:false))
                     if allowAudition,group != nil,let auditionTrack=composition.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) {
-                        let audioDuration=renderedAudio ? clip.duration.cmTime:sourceDuration
-                        try auditionTrack.insertTimeRange(CMTimeRange(start:audioSourceStart.cmTime,duration:audioDuration),of:audioSource,at:clip.start.cmTime)
+                        try insertAudio(clip.start,clip.end,on:auditionTrack)
                         audioRoutes.append(.init(trackID:auditionTrack.trackID,assetID:assetID,clip:clip,envelope:envelope,group:group,candidate:true))
                     }
                 }
@@ -506,4 +530,37 @@ extension RationalTime {
     }
 
 
+}
+
+/// AVFoundation receives bounded canonical clocks; the document, render-layer
+/// evaluation, source windows, and automation keep their original rational times.
+/// Always map absolute endpoints first so adjacent fragments share one boundary.
+enum NativeCompositionClock {
+    static func time(_ time:RationalTime,scale:CMTimeScale)throws->CMTime {
+        let seconds=time.seconds
+        guard scale>0,seconds.isFinite,(0...172800).contains(seconds) else{throw MediaError.invalidRange("Composition timing")}
+        if time.timescale<=Int64(Int32.max){
+            return CMTimeConvertScale(time.cmTime,timescale:scale,method:.roundHalfAwayFromZero)
+        }
+        // Derived endpoints can exceed Core Media's Int32 scale. Full-width
+        // integer conversion keeps half-tick rounding exact even after hours.
+        let denominator=UInt64(time.timescale)
+        let product=UInt64(time.value).multipliedFullWidth(by:UInt64(scale))
+        guard product.high<denominator else{throw MediaError.invalidRange("Composition timing")}
+        let division=denominator.dividingFullWidth(product)
+        let rounded=division.quotient+(division.remainder>=(denominator+1)/2 ? 1:0)
+        guard rounded<=UInt64(Int64.max) else{throw MediaError.invalidRange("Composition timing")}
+        return CMTime(value:Int64(rounded),timescale:scale)
+    }
+    static func range(from start:RationalTime,to end:RationalTime,scale:CMTimeScale,pcmEnd:CMTime?=nil)throws->CMTimeRange {
+        let left=try time(start,scale:scale)
+        var right=try time(end,scale:scale)
+        if let pcmEnd,CMTimeCompare(right,pcmEnd)>0 {
+            let excess=CMTimeSubtract(right,pcmEnd).seconds
+            guard excess.isFinite,excess<=1/Double(scale)+1e-10 else{throw MediaError.invalidRange("Rendered audio timing")}
+            right=CMTimeConvertScale(pcmEnd,timescale:scale,method:.roundTowardZero)
+        }
+        guard CMTimeCompare(right,left)>0 else{throw MediaError.invalidRange("Composition timing")}
+        return CMTimeRange(start:left,end:right)
+    }
 }
