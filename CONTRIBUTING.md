@@ -12,6 +12,11 @@ Keep the picture large, timeline clear and controls quiet. Use accessible icons,
 tooltips and keyboard access. No section descriptions, fake visual thumbnails,
 nonfunctional buttons, implicit ripple/overwrite or silent media processing.
 
+Public product screenshots must capture the running native app. Demo media may be
+fictional, but do not reconstruct the UI or replace the video layer after capture.
+Keep validation renders separate from product screenshots. If genuine capture is
+unavailable, leave screenshots out rather than publish substitutes.
+
 No cloud services, mandatory AI, proprietary assets or substantial dependency
 license changes without the owner's approval. Do not commit credentials/signing
 identities. Ad-hoc builds are development builds. Distribution signing and

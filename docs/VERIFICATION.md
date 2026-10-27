@@ -55,8 +55,8 @@ long-timeline half-tick rounding. This does not establish the complete VFR/codec
 matrix or the full Phase 2 workflow gate.
 
 Grouped volume/opacity point edits retain exact undo, spacing and persistence and
-match decoded preview/export output. The opt-in documentation capture passes and
-produces the three inspected [workspace images](screenshots/README.md).
+match decoded preview/export output. Native UI render checks remain validation
+evidence; public product screenshots require genuine running-app capture.
 
 ## Earlier foundation evidence
 

@@ -5,115 +5,85 @@
 ![Swift 6](https://img.shields.io/badge/Swift-6-e57546)
 [![MIT](https://img.shields.io/badge/license-MIT-8bb8b0)](LICENSE)
 
-A native Mac video editor with a large viewer, layered timeline and direct editing.
-Local media, local rendering. No account, subscription, upload or watermark.
+An open-source Mac video editor for music performances, class projects and everyday
+videos. A large viewer, layered timeline and direct editing keep the work in view.
 
-![Life Editor workspace: large composition viewer above a layered timeline with music, picture and titles](docs/screenshots/workspace.png)
+**Local editing and rendering. No account, subscription, upload or watermark.**
 
-**Pre-1.0 development · Apple Silicon · macOS 15+**
+[Build and try it](#build-and-try-it) · [What's working](#whats-working) · [Progress](docs/PROGRESS.md) · [Roadmap](docs/ROADMAP.md) · [Contribute](CONTRIBUTING.md)
 
-[Build from source](#build) · [Progress](docs/PROGRESS.md) · [Current status](docs/STATUS.md) · [Full roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md)
+## What's working
 
-## A quiet workspace
+| Edit | Make it yours | Work with music |
+|---|---|---|
+| Layer video, audio, images and titles | Original filters and transitions | Waveforms, beat grids and markers |
+| Trim, split, move and arrange clips | Styled text, shapes and drawings | Volume fades, EQ and loudness tools |
+| Scrub and step through frames | Crop, transform and use safe guides | Synchronize and switch camera angles |
+| Undo edits and recover projects | Import/export SRT captions | Keep a continuous master audio track |
 
-The viewer stays large. Panels appear when needed; the timeline keeps pictures,
-audio and titles together. Volume handles and automation points edit one envelope.
+Multicam editing includes four camera previews, reviewed waveform/timecode
+alignment, optional clock-drift correction, and video/audio switching decisions.
+Drag cut boundaries in the timeline or refine them numerically.
 
-| Original looks | Audio and automation |
-|---|---|
-| ![Effects panel with visual filter thumbnails beside the composition](docs/screenshots/effects.png) | ![Audio controls and waveform automation in the native workspace](docs/screenshots/audio.png) |
+Projects save as `.lifeedit` packages. Reference your originals or collect media
+into a portable project. Preview and export use the same compositor; exports use
+full-quality media and a fixed snapshot of your edit.
 
-Native view captures use fictional, generated rehearsal imagery and a rendered
-poster frame in place of the hardware video layer. The controls and timeline are
-the application's own views. [Capture details and reproduction](docs/screenshots/README.md).
+Export video as H.264, HEVC or ProRes, or audio as WAV, AIFF or M4A. Choose the whole
+sequence or a range. See the [tested formats](docs/FORMATS.md) for import coverage.
 
-## Build
+## Build and try it
+
+Requires **macOS 15+, Apple Silicon, and a Swift 6 toolchain with a macOS SDK**.
 
 ```sh
+git clone https://github.com/3nboyd/life-editor.git
+cd life-editor
 scripts/build-app.sh
 open 'dist/Life Editor.app'
 ```
 
-A Swift 6 toolchain/macOS SDK is required. Source builds use ad-hoc signing and do
-not need distribution credentials. Optional broad-format helpers are built from
-verified LGPL source, never taken from Homebrew:
+Source builds do not require distribution signing credentials. For additional
+format support, see the [pinned media-helper build](docs/FFMPEG.md).
 
-```sh
-scripts/build-ffmpeg.sh
-scripts/build-app.sh
-```
+### Make a first edit
 
-When present, the complete helper tree (matching source, licenses, configuration,
-inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
+1. Import footage or music with the import button or **⌘I**.
+2. Arrange clips in the timeline; drag an edge to trim or press **⌘B** to split.
+3. Add a title, choose a look, or drag the audio fade handles.
+4. Save with **⌘S**, then use the export button to render your video.
 
-## Current editing paths
+Normal edits preserve gaps. Same-track collisions do not silently overwrite
+material, and committed edits support undo.
 
-### Editing
+## Development
 
-- Layered video/audio/still import, playback, scrubbing and frame stepping.
-- Move/trim/split/duplicate/delete/ripple-delete with source/overlap protection.
-- Multi-selection, linked/group moves, clipboard and editable vector drawings/shapes.
-- Marker notes, ranges, and colors; markers can follow their original source frames when clips are trimmed or their speed changes.
-- Crop, position, scale, rotation, flips and non-exported safe-area guides.
-- Cached per-channel waveforms with exact source-rate sample detail when zoomed in.
-- Autosave after editing pauses, recent projects, project duplication, and confirmation before reverting.
+**Pre-1.0, in active development.** Everyday editing, multicam and creator tools
+are already implemented, with broader workflow and usability validation underway.
+Loops, reverse, speed ramps, advanced color and parts of the creative toolkit
+remain on the roadmap.
 
-### Titles and effects
+[Current progress](docs/PROGRESS.md) separates working features from remaining
+work. [Verification](docs/VERIFICATION.md) records actual test results and their
+limits. [Phase 3](docs/PHASE3.md) lays out the creator-toolkit delivery plan.
 
-- Fourteen transitions that stay within the available footage, with duration handles on the timeline.
-- Direct volume/opacity points, grouped point editing, shared fades, curves, constant speed and pitch lock.
-- Editable multiline titles, six entrances, colors/backgrounds/outlines and viewer handles.
-- Shared color wheel, RGB/HEX, swatches and viewer sampling.
-- Sixteen original visual looks, tonal adjustments and real media thumbnails.
+To build, test or contribute, start with [Contributing](CONTRIBUTING.md).
+Original project code is MIT licensed; dependencies have
+[separate notices](docs/DEPENDENCIES.md).
 
-### Audio and multicam
-
-- Musical grids with swing/anchors, tap tempo, background onset/tempo analysis.
-- Gain/pan/channel mapping/EQ, optional limiter and calibrated loudness measurement.
-- Multicam groups with four lightweight camera previews, suggested audio-waveform alignment, and manual timing offsets.
-- Reviewed clock-drift correction with source/master anchors, preview and one-step undo.
-- Continuous master audio by default; switch video, audio, or both, replace cuts within a selected range, and preview camera choices.
-- Drag video/audio decision boundaries directly in the timeline, with a ghost preview, snapping and one-action undo.
-
-### Export and project recovery
-
-- SRT import/export and timed captions; portable collected packages and recovery.
-- H.264/HEVC/ProRes/WAV/AIFF/M4A export, ranges, progress and cancellation.
-
-Every export consumes a snapshot and the same compositor as preview. Rational
-project times retain sample/frame precision. Normal moves preserve gaps; a
-same-track collision is rejected instead of silently overwriting material.
-
-These features are implemented, with broader workflow and usability testing still
-in progress. See the [development status](docs/STATUS.md),
-[test results](docs/VERIFICATION.md), and [roadmap](docs/ROADMAP.md).
-
-## Tests
-
-```sh
-scripts/test.sh
-LIFE_RUN_MEDIA_INTEGRATION=1 scripts/test.sh
-```
-
-Native tests generate synthetic media and check decoded preview/export frames,
-retiming sample count/pitch/fades, camera cuts, creative effects, actual codecs,
-selected ranges and cancellation safety. The UI render check exercises 1280 × 800;
-it does not substitute for hands-on usability or accessibility testing.
-
-## Shortcuts
+## Useful shortcuts
 
 | Action | Shortcut |
 |---|---|
 | Import / Open / Save | ⌘I / ⌘O / ⌘S |
-| Save As | ⇧⌘S |
 | Play/pause / frame step | Space / ← → |
 | Split / delete | ⌘B / Delete |
 | Duplicate / ripple delete | ⌘D / ⇧Delete |
 | Marker / snapping | M / N |
 | Bypass snap during drag | Option |
+| Cancel a cut drag | Escape |
 | Viewer focus | ⇧⌘F |
 | Undo / redo | ⌘Z / ⇧⌘Z |
 | Visible multicam angles | 1–4 |
 
-[Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) ·
-[Dependencies](docs/DEPENDENCIES.md) · [Formats](docs/FORMATS.md)
+[Architecture](docs/ARCHITECTURE.md) · [Project status](docs/STATUS.md) · [Full roadmap](docs/ROADMAP.md)
