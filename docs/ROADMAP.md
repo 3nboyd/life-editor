@@ -4,6 +4,10 @@ Status: **planned** unless marked otherwise. A model field or a control alone do
 not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
+Current pass: **Phase 2, direct multicam cut refinement**. See the
+[progress assessment](PROGRESS.md) for implemented slices, remaining work and the
+qualified overall completion estimate. Open broad checkboxes include partial work.
+
 ## Phase 0: foundation gate
 
 - [x] Native Swift 6/macOS 15/Apple Silicon app, modular document/commands/timeline/media/renderer/audio/analysis/export boundaries.
