@@ -90,14 +90,51 @@ enum TitleRenderer {
         let setter = CTFramesetterCreateWithAttributedString(text)
         let measured = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(location: 0, length: 0), nil,
             CGSize(width: size.width * 0.9, height: size.height * 0.9), nil)
-        let padding = max(2, title.fontSize * 0.25)
+        let padding = style.backgroundStyle?.padding ?? max(2, title.fontSize * 0.25)
         let bounds = CGRect(x: style.x * size.width - measured.width / 2 - padding,
                             y: (1 - style.y) * size.height - measured.height / 2 - padding,
                             width: ceil(measured.width) + padding * 2, height: ceil(measured.height) + padding * 2)
-        context.setFillColor(color(style.background))
-        context.addPath(CGPath(roundedRect: bounds, cornerWidth: min(bounds.height, bounds.width) * style.cornerRadius,
-                               cornerHeight: min(bounds.height, bounds.width) * style.cornerRadius, transform: nil))
-        context.fillPath()
+        if let background=style.backgroundStyle {
+            // Shadow the completed title as one silhouette. A bubble tail is
+            // outside this body and never participates in Core Text measurement.
+            context.saveGState()
+            context.setShadow(offset:CGSize(width:background.shadowOffsetX,height:-background.shadowOffsetY),blur:background.shadowBlur,color:color(background.shadowColor))
+            context.beginTransparencyLayer(auxiliaryInfo:nil)
+            if background.shape != .none {
+                let radius:Double
+                switch background.shape {
+                case .none,.square:radius=0
+                case .pill:radius=min(bounds.height,bounds.width)/2
+                case .rounded:radius=min(bounds.height,bounds.width)*background.cornerRadius/2
+                case .speechBubble:radius=min(min(bounds.height,bounds.width)*background.cornerRadius/2,bounds.width*0.2)
+                }
+                let path=CGMutablePath()
+                if background.shape != .speechBubble {path.addRoundedRect(in:bounds,cornerWidth:radius,cornerHeight:radius)}
+                if background.shape == .speechBubble {
+                    let tail=min(bounds.height*0.28,bounds.width*0.15),base=bounds.minX+bounds.width*0.25
+                    // Trace one silhouette so no border crosses the tail attachment.
+                    let body=CGMutablePath()
+                    body.move(to:CGPoint(x:bounds.minX+radius,y:bounds.minY))
+                    body.addLine(to:CGPoint(x:base,y:bounds.minY))
+                    body.addLine(to:CGPoint(x:base-tail*0.25,y:bounds.minY-tail))
+                    body.addLine(to:CGPoint(x:base+tail,y:bounds.minY))
+                    body.addLine(to:CGPoint(x:bounds.maxX-radius,y:bounds.minY))
+                    body.addArc(tangent1End:CGPoint(x:bounds.maxX,y:bounds.minY),tangent2End:CGPoint(x:bounds.maxX,y:bounds.maxY),radius:radius)
+                    body.addArc(tangent1End:CGPoint(x:bounds.maxX,y:bounds.maxY),tangent2End:CGPoint(x:bounds.minX,y:bounds.maxY),radius:radius)
+                    body.addArc(tangent1End:CGPoint(x:bounds.minX,y:bounds.maxY),tangent2End:CGPoint(x:bounds.minX,y:bounds.minY),radius:radius)
+                    body.addArc(tangent1End:CGPoint(x:bounds.minX,y:bounds.minY),tangent2End:CGPoint(x:bounds.maxX,y:bounds.minY),radius:radius)
+                    body.closeSubpath();path.addPath(body)
+                }
+                context.addPath(path)
+                context.setFillColor(color(style.background));context.setStrokeColor(color(background.borderColor));context.setLineWidth(background.borderWidth)
+                context.drawPath(using:background.borderWidth>0 ? .fillStroke:.fill)
+            }
+        }else{
+            context.setFillColor(color(style.background))
+            context.addPath(CGPath(roundedRect: bounds, cornerWidth: min(bounds.height, bounds.width) * style.cornerRadius,
+                                   cornerHeight: min(bounds.height, bounds.width) * style.cornerRadius, transform: nil))
+            context.fillPath()
+        }
         let frame = CTFramesetterCreateFrame(setter, CFRange(location: 0, length: 0), CGPath(rect: bounds.insetBy(dx: padding, dy: padding), transform: nil), nil)
         if let count = visibleCharacters, count < title.text.count {
             let limit = title.text.prefix(count).utf16.count
@@ -124,6 +161,7 @@ enum TitleRenderer {
                 }
             }
         } else { CTFrameDraw(frame, context) }
+        if style.backgroundStyle != nil {context.endTransparencyLayer();context.restoreGState()}
         return context.makeImage().map(CIImage.init(cgImage:))
 
     }
