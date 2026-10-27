@@ -23,6 +23,7 @@ struct CameraSynchronizationControls:View {
                         Text(String(format:"%.0f%%",candidate.confidence*100)).font(.caption.monospacedDigit()).foregroundStyle(candidate.confidence<0.6 ? .orange:.secondary)
                     }
                     if let note=candidate.note{Label(note,systemImage:candidate.confidence == 0 ? "pencil":"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)}
+                    else if candidate.confidence<0.6{Label("Review",systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange).help("Review low-confidence alignment").accessibilityLabel("Review low-confidence alignment")}
                     if let drift=candidate.drift{Text(String(format:"Drift %+.0f ms",drift*1000)).font(.caption).foregroundStyle(.orange)}
                 }
             }
