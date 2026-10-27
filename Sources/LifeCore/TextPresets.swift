@@ -9,7 +9,7 @@ public enum TextPresetError:LocalizedError {
 }
 /// Original appearance presets. The Typewriter family changes typography only;
 /// the separate entrance animation, content, timing and font size remain editable.
-/// Presets own font/fill/background/outline and the canonical Bloom value. Other
+/// Presets own font/fill/outline and the canonical Bloom value. Other
 /// families reset Bloom to zero in place; unrelated effects and instance metadata
 /// survive. Multiple Bloom instances require explicit user cleanup first.
 public enum TextPresets {
@@ -20,7 +20,7 @@ public enum TextPresets {
         let bloom=effects.indices.filter{effects[$0].stableID==bloomID}
         guard bloom.count<=1 else{throw TextPresetError.duplicateBloom}
         var clip=original,style=title.style ?? .init()
-        style.color = .white;style.background = .clear;style.outlineWidth=0;style.outlineColor = .black
+        style.color = .white;style.outlineWidth=0;style.outlineColor = .black
         switch family {
         case .plain:style.fontName="HelveticaNeue"
         case .bold:style.fontName="Helvetica-Bold"
