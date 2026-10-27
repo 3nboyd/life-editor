@@ -14,7 +14,7 @@ struct TimelineSurface: NSViewRepresentable {
         guard let timeline=scroll.documentView as? TimelineCanvas else{return}
         timeline.store=store
         timeline.synchronizeLayout()
-        timeline.frame.size=NSSize(width:max(scroll.contentSize.width,140+max(20,store.timelineDocument.sequence.duration.seconds+5)*store.pixelsPerSecond),height:max(scroll.contentSize.height,timeline.layout.totalHeight(for:timeline.tracks)))
+        timeline.frame.size=NSSize(width:max(scroll.contentSize.width,140+max(20,store.timelineDocument.sequence.duration.seconds+5)*store.pixelsPerSecond),height:max(scroll.contentSize.height,timeline.totalTimelineHeight))
         timeline.refreshAccessibility()
         timeline.loadWaveforms()
         timeline.loadThumbnails()
@@ -39,6 +39,18 @@ struct TimelineSurface: NSViewRepresentable {
     private var thumbnailURLs:[UUID:URL]=[:]
     private var thumbnailMetadataTask:Task<Void,Never>?
     private var thumbnailMetadataPoll=Date.distantPast
+    struct CutDrag {
+        let id:UUID;let audio:Bool;let origin:NSPoint;let original:RationalTime;let baseline:ProjectDocument
+        var target:Double;var proposal:MulticamCutProposal?;var failure:String?
+    }
+    var cutDrag:CutDrag?
+    var selectedCutID:UUID?
+    var showsDecisionLanes:Bool {store.panel == .multicam && store.multicamGroup != nil}
+    var decisionHeight:Double {showsDecisionLanes ? 56:0}
+    var totalTimelineHeight:Double {layout.totalHeight(for:tracks)+decisionHeight}
+    private var timelineRows:[TimelineTrackRow] {layout.rows(for:tracks).map{.init(trackID:$0.trackID,index:$0.index,top:$0.top+decisionHeight,height:$0.height)}}
+    private func trackRow(at y:Double)->Int? {layout.row(at:y-decisionHeight,tracks:tracks)}
+    func cutHandleRect(_ cut:MulticamCut,audio:Bool)->NSRect {NSRect(x:x(cut.time.seconds)-7,y:ruler+(audio ? 28:0),width:14,height:28)}
     var drag: Drag?
     private enum AutomationDragMode { case point(UUID),base,fadeIn,fadeOut }
     private struct AutomationDrag { var clipID:UUID;var lane:AutomationLane;var mode:AutomationDragMode;var origin:NSPoint;var envelope:AutomationEnvelope;var selectedIDs:Set<UUID>=[] }
@@ -56,15 +68,27 @@ struct TimelineSurface: NSViewRepresentable {
     private var sampleTasks:[String:Task<Void,Never>]=[:]
     private var accessibilityItems:[NSAccessibilityElement]=[]
     private struct AccessibilitySignature: Equatable {
-        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double;var layoutRevision:Int;var automationSelection:Set<UUID>;var lane:AutomationLane
+        var document: ProjectDocument; var selection: Set<UUID>; var frame: NSRect; var bounds: NSRect; var viewport: NSRect; var windowFrame: NSRect; var pixelsPerSecond: Double;var layoutRevision:Int;var automationSelection:Set<UUID>;var lane:AutomationLane;var decisions:Bool;var cutSelection:UUID?
     }
     private var accessibilitySignature: AccessibilitySignature?
     private(set) var accessibilityRebuildCount=0
     func refreshAccessibility(){
-        let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision,automationSelection:store.selectedAutomationPointIDs,lane:store.automationLane)
+        let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision,automationSelection:store.selectedAutomationPointIDs,lane:store.automationLane,decisions:showsDecisionLanes,cutSelection:selectedCutID)
         guard signature != accessibilitySignature else { return }
         accessibilitySignature=signature; accessibilityRebuildCount += 1
         var elements:[NSAccessibilityElement]=[]
+        if showsDecisionLanes,let group=store.multicamGroup {
+            for audio in [false,true] {for cut in audio ? group.audioCuts ?? []:group.cuts {
+                let element=TimelineActionElement{[weak self] in
+                    guard let self else{return false};self.store.selection=nil;self.store.selectedIDs=[];self.selectedCutID=cut.id;self.store.seek(cut.time);self.needsDisplay=true;self.refreshAccessibility();return true
+                }
+                element.setAccessibilityRole(.button);element.setAccessibilityParent(self)
+                let angle=group.angleAssetIDs.firstIndex(of:cut.angleID).map{String($0+1)} ?? (cut.angleID==MulticamSwitching.silenceAudioID ? "silence":"master")
+                element.setAccessibilityLabel((audio ? "Audio":"Video")+" cut, source "+angle)
+                element.setAccessibilityValue(String(format:"%.3f seconds",cut.time.seconds)+(cut.time == .zero ? ", fixed opening":"")+(selectedCutID==cut.id ? ", selected":""))
+                let box=convert(cutHandleRect(cut,audio:audio),to:nil);element.setAccessibilityFrame(window?.convertToScreen(box) ?? box);elements.append(element)
+            }}
+        }
         for (row,track) in tracks.enumerated(){
             for clip in track.clips {
                 let element=TimelineActionElement { [weak self] in
@@ -138,14 +162,14 @@ struct TimelineSurface: NSViewRepresentable {
 
     @discardableResult func setTrackHeight(_ height:Double,for id:UUID)->Bool {
         guard layout.setHeight(height,for:id) else{return false}
-        setFrameSize(NSSize(width:frame.width,height:max(enclosingScrollView?.contentSize.height ?? 0,layout.totalHeight(for:tracks))))
+        setFrameSize(NSSize(width:frame.width,height:max(enclosingScrollView?.contentSize.height ?? 0,totalTimelineHeight)))
         refreshAccessibility();loadWaveforms();loadThumbnails();window?.invalidateCursorRects(for:self);needsDisplay=true;return true
     }
     @discardableResult func resizeTrack(_ id:UUID,by delta:Double)->Bool {setTrackHeight(layout.height(for:id)+delta,for:id)}
-    override func resetCursorRects(){super.resetCursorRects();for row in layout.rows(for:tracks){addCursorRect(NSRect(x:visibleRect.minX,y:row.bottom-4,width:header,height:8),cursor:.resizeUpDown)}}
+    override func resetCursorRects(){super.resetCursorRects();for row in timelineRows{addCursorRect(NSRect(x:visibleRect.minX,y:row.bottom-4,width:header,height:8),cursor:.resizeUpDown)}}
     override func menu(for event:NSEvent)->NSMenu? {
         let point=convert(event.locationInWindow,from:nil)
-        guard point.x<visibleRect.minX+header,let row=layout.row(at:point.y,tracks:tracks) else{return super.menu(for:event)}
+        guard point.x<visibleRect.minX+header,let row=trackRow(at:point.y) else{return super.menu(for:event)}
         let menu=NSMenu();for (label,height) in [("Compact",56.0),("Medium",76.0),("Large",140.0),("Tall",220.0)] {
             let item=NSMenuItem(title:label,action:#selector(heightPreset(_:)),keyEquivalent:"");item.target=self;item.representedObject=["id":tracks[row].id.uuidString,"height":String(height)];menu.addItem(item)
         };return menu
@@ -285,7 +309,7 @@ struct TimelineSurface: NSViewRepresentable {
     override var acceptsFirstResponder:Bool { true }
     var tracks:[Track] { Array(store.timelineDocument.sequence.tracks.reversed()) }
     func x(_ time:Double)->Double { header+time*store.pixelsPerSecond }
-    private func rowLayout(_ index:Int)->TimelineTrackRow { layout.rows(for:tracks)[index] }
+    private func rowLayout(_ index:Int)->TimelineTrackRow { timelineRows[index] }
     func synchronizeLayout(){
         guard layout.projectID != store.timelineDocument.id else{return}
         layout.useProject(store.timelineDocument.id)
@@ -337,6 +361,7 @@ struct TimelineSurface: NSViewRepresentable {
                 } }
             }
         }
+        drawDecisionLanes()
         for (row,track) in tracks.enumerated() {
             let geometry=rowLayout(row),top=geometry.top
             NSColor(white:0.2,alpha:1).setStroke();let divider=NSBezierPath();divider.move(to:NSPoint(x:0,y:geometry.bottom));divider.line(to:NSPoint(x:bounds.width,y:geometry.bottom));divider.stroke()
@@ -421,14 +446,66 @@ struct TimelineSurface: NSViewRepresentable {
         if let snapX { NSColor.systemOrange.setStroke();let p=NSBezierPath();p.move(to:NSPoint(x:snapX,y:0));p.line(to:NSPoint(x:snapX,y:bounds.height));p.stroke();text(snapLabel ?? "Snap",NSPoint(x:snapX+4,y:20),color:.systemOrange) }
         let xx=x(store.playhead); NSColor(red:0.7,green:0.9,blue:0.85,alpha:1).setStroke();let p=NSBezierPath();p.move(to:NSPoint(x:xx,y:0));p.line(to:NSPoint(x:xx,y:bounds.height));p.lineWidth=1.5;p.stroke()
     }
+    private func drawDecisionLanes(){
+        guard showsDecisionLanes,let group=store.multicamGroup else{return}
+        for audio in [false,true] {
+            let top=ruler+(audio ? 28.0:0),cuts=(audio ? group.audioCuts ?? []:group.cuts).sorted{$0.time<$1.time}
+            NSColor(calibratedWhite:audio ? 0.14:0.18,alpha:1).setFill();NSRect(x:0,y:top,width:bounds.width,height:28).fill()
+            var events=cuts
+            if events.first?.time != .zero,let initial=audio ? group.masterAudioAssetID:group.angleAssetIDs.first {events.insert(.init(time:.zero,angleID:initial),at:0)}
+            for (index,cut) in events.enumerated(){
+                let end=index+1<events.count ? events[index+1].time.seconds:store.document.sequence.duration.seconds
+                let box=NSRect(x:x(cut.time.seconds),y:top+3,width:max(1,x(end)-x(cut.time.seconds)),height:22)
+                NSColor(calibratedWhite:audio ? 0.29:0.36,alpha:1).setFill();box.insetBy(dx:1,dy:0).fill()
+                let label=group.angleAssetIDs.firstIndex(of:cut.angleID).map{String($0+1)} ?? (cut.angleID==MulticamSwitching.silenceAudioID ? "–":"M")
+                text(label,NSPoint(x:box.minX+9,y:top+6),color:.white,size:11)
+                if cuts.contains(where:{$0.id==cut.id}) {
+                    NSColor.white.setFill();NSRect(x:box.minX-1,y:top+4,width:2,height:20).fill()
+                    if selectedCutID==cut.id {NSColor.white.setStroke();NSBezierPath(rect:box.insetBy(dx:2,dy:1)).stroke();text("◆",NSPoint(x:box.minX-5,y:top+6),color:.white,size:10)}
+                }
+            }
+            NSColor(calibratedWhite:0.12,alpha:1).setFill();NSRect(x:visibleRect.minX,y:top,width:header,height:28).fill()
+            text(audio ? "Audio cuts":"Video cuts",NSPoint(x:visibleRect.minX+12,y:top+7),color:.lightGray,size:11)
+        }
+        if store.gridVisible {
+            let lower=max(0,(visibleRect.minX-header)/store.pixelsPerSecond),upper=max(lower,(visibleRect.maxX-header)/store.pixelsPerSecond)
+            var guides:[(Double,Bool)]=[]
+            if store.gridMode == .beats,let grid=store.timelineDocument.sequence.musicalGrid {
+                guides=grid.divisions(from:store.time(lower,audio:true),to:store.time(upper,audio:true),maximumCount:2000).map{($0.time.seconds,$0.isBar)}
+            }else{
+                let step=store.gridMode == .frames ? frameGridStep:timeGridStep
+                let first=max(0,Int((lower/step).rounded(.down))),last=max(0,Int((upper/step).rounded(.up)))
+                if last>=first,last-first<2000{guides=(first...last).map{(Double($0)*step,false)}}
+            }
+            for (time,major) in guides where x(time)>=visibleRect.minX+header {
+                NSColor(white:major ? 0.65:0.5,alpha:major ? 0.7:0.4).setStroke();let path=NSBezierPath();path.move(to:.init(x:x(time),y:ruler));path.line(to:.init(x:x(time),y:ruler+decisionHeight));path.lineWidth=major ? 1:0.5;path.stroke()
+            }
+        }
+        if let drag=cutDrag {
+            let top=ruler+(drag.audio ? 28.0:0),xx=x(drag.target)
+            (drag.proposal == nil ? NSColor.systemOrange:NSColor.white).setStroke();let path=NSBezierPath();path.move(to:.init(x:xx,y:top));path.line(to:.init(x:xx,y:top+28));path.lineWidth=3;path.stroke()
+            text(drag.failure ?? String(format:"%.3f",drag.target),NSPoint(x:xx+5,y:top+6),color:.white,size:10)
+        }
+    }
     override func mouseDown(with event:NSEvent) {
         if store.placementProposal != nil {let point=convert(event.locationInWindow,from:nil);if point.x>=visibleRect.minX+header{store.seek(max(0,(point.x-header)/store.pixelsPerSecond))};return}
         window?.makeFirstResponder(self)
         let point=convert(event.locationInWindow,from:nil)
-        if point.x<visibleRect.minX+header,let boundary=layout.rows(for:tracks).first(where:{abs($0.bottom-point.y)<=4}) {
+        if showsDecisionLanes,point.y>=ruler,point.y<ruler+decisionHeight,point.x>=visibleRect.minX+header,let group=store.multicamGroup {
+            let audio=point.y>=ruler+28,cuts=(audio ? group.audioCuts ?? []:group.cuts).sorted{$0.time<$1.time}
+            if let cut=cuts.min(by:{abs(x($0.time.seconds)-point.x)<abs(x($1.time.seconds)-point.x)}),cutHandleRect(cut,audio:audio).contains(point) {
+                store.selection=nil;store.selectedIDs=[];selectedCutID=cut.id
+                do {let proposal=try store.proposeMulticamCut(cut.id,audio:audio,seconds:nil,baseline:store.document)
+                    cutDrag=CutDrag(id:cut.id,audio:audio,origin:point,original:cut.time,baseline:store.document,target:cut.time.seconds,proposal:proposal)
+                }catch{store.error=EditorStore.message(error)}
+            }else{selectedCutID=nil;store.seek(max(0,(point.x-header)/store.pixelsPerSecond))}
+            needsDisplay=true;refreshAccessibility();return
+        }
+        selectedCutID=nil
+        if point.x<visibleRect.minX+header,let boundary=timelineRows.first(where:{abs($0.bottom-point.y)<=4}) {
             layoutTrackSelection=boundary.trackID;resizingTrack=(boundary.trackID,Double(point.y),boundary.height);NSCursor.resizeUpDown.set();return
         }
-        guard let row=layout.row(at:point.y,tracks:tracks) else {store.seek((point.x-header)/store.pixelsPerSecond);return}
+        guard let row=trackRow(at:point.y) else {store.seek((point.x-header)/store.pixelsPerSecond);return}
         let track=tracks[row];layoutTrackSelection=track.id
         if point.x<visibleRect.minX+header {
             if point.y>=rowLayout(row).bottom-28 {
@@ -487,6 +564,16 @@ struct TimelineSurface: NSViewRepresentable {
     }
     override func mouseDragged(with event:NSEvent) {
         guard store.placementProposal == nil else{return}
+        if var gesture=cutDrag {
+            let point=convert(event.locationInWindow,from:nil)
+            var target=gesture.original.seconds+(point.x-gesture.origin.x)/store.pixelsPerSecond
+            snapX=nil;snapLabel=nil
+            if store.snapping && !event.modifierFlags.contains(.option),let snap=snappedTime(target,excludingCut:gesture.id){target=snap.time;snapX=x(target);snapLabel=snap.label}
+            gesture.target=target
+            do{let proposal=try store.proposeMulticamCut(gesture.id,audio:gesture.audio,seconds:target,baseline:gesture.baseline);gesture.target=proposal.time.seconds;gesture.proposal=proposal;gesture.failure=nil}
+            catch{gesture.proposal=nil;gesture.failure=EditorStore.message(error)}
+            cutDrag=gesture;needsDisplay=true;return
+        }
         if let resize=resizingTrack {let point=convert(event.locationInWindow,from:nil);_ = setTrackHeight(resize.height+point.y-resize.originY,for:resize.id);return}
         if let gesture=automationDrag,let clip=store.selectedClip,clip.id == gesture.clipID,let row=tracks.firstIndex(where: { $0.clips.contains { $0.id == clip.id } }) {
             let point=convert(event.locationInWindow,from:nil),box=rect(clip,row:row)
@@ -542,7 +629,13 @@ struct TimelineSurface: NSViewRepresentable {
         needsDisplay=true
     }
     override func mouseUp(with event:NSEvent) {
-        guard store.placementProposal == nil else{drag=nil;automationDrag=nil;transitionResize=nil;resizingTrack=nil;ghost=nil;snapX=nil;snapLabel=nil;return}
+        guard store.placementProposal == nil else{cutDrag=nil;drag=nil;automationDrag=nil;transitionResize=nil;resizingTrack=nil;ghost=nil;snapX=nil;snapLabel=nil;return}
+        if let gesture=cutDrag {
+            guard showsDecisionLanes else{cutDrag=nil;snapX=nil;snapLabel=nil;needsDisplay=true;return}
+            cutDrag=nil;snapX=nil;snapLabel=nil
+            if let proposal=gesture.proposal {_ = store.commitMulticamCut(proposal)}else if let failure=gesture.failure{store.error=failure}
+            needsDisplay=true;refreshAccessibility();return
+        }
         if resizingTrack != nil {resizingTrack=nil;NSCursor.arrow.set();return}
         if automationDrag != nil { automationDrag=nil;snapX=nil;snapLabel=nil;store.endGesture();needsDisplay=true;return }
         if transitionResize != nil {transitionResize=nil;store.endGesture();return}
@@ -625,7 +718,7 @@ struct TimelineSurface: NSViewRepresentable {
     }
     private var timeGridStep: Double { [0.01,0.05,0.1,0.25,0.5,1,2,5,10,30,60,120,300].first { $0>=80/store.pixelsPerSecond } ?? 600 }
     /// Explicit edits take priority over a closer ordinary grid division, within eight screen pixels.
-    func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil,excludingPoints:Set<UUID> = []) -> (time:Double,label:String)? {
+    func snappedTime(_ target: Double, excluding: Set<UUID> = [], excludingPoint:UUID? = nil,excludingPoints:Set<UUID> = [],excludingCut:UUID? = nil) -> (time:Double,label:String)? {
         var explicit:[(time:Double,label:String)]=store.timelineDocument.sequence.tracks.flatMap(\.clips).filter { !excluding.contains($0.id) }.flatMap { [($0.start.seconds,"Clip"),($0.end.seconds,"Clip")] }
         for marker in store.timelineDocument.sequence.markers {
             guard let range=MarkerResolver.sequenceRange(marker,in:store.timelineDocument) else { continue }
@@ -639,6 +732,7 @@ struct TimelineSurface: NSViewRepresentable {
                 }
             }
         }
+        if showsDecisionLanes,let group=store.multicamGroup {for cut in group.cuts+(group.audioCuts ?? []) where cut.id != excludingCut {explicit.append((cut.time.seconds,"Cut"))}}
         explicit.append((store.playhead,"Playhead"))
         let candidates=explicit.filter { $0.time >= 0 && abs($0.time-target)*store.pixelsPerSecond<=8 }
         if let nearest=candidates.min(by:{abs($0.time-target)<abs($1.time-target)}) { return nearest }
@@ -665,7 +759,7 @@ struct TimelineSurface: NSViewRepresentable {
         guard store.placementProposal == nil else{return nil}
         guard let value=sender.draggingPasteboard.string(forType:.string),value.hasPrefix("life.transition."),TransitionKind(rawValue:String(value.dropFirst("life.transition.".count))) != nil else{return nil}
         let point=convert(sender.draggingLocation,from:nil)
-        guard let row=layout.row(at:point.y,tracks:tracks),tracks[row].kind != .audio,!tracks[row].isLocked else{return nil}
+        guard let row=trackRow(at:point.y),tracks[row].kind != .audio,!tracks[row].isLocked else{return nil}
         let sorted=tracks[row].clips.sorted{$0.start<$1.start}
         let pairs=Array(zip(sorted,sorted.dropFirst())).filter{$0.end==$1.start && abs(x($0.end.seconds)-point.x)<24}
         return pairs.min{abs(x($0.0.end.seconds)-point.x)<abs(x($1.0.end.seconds)-point.x)}
@@ -682,6 +776,8 @@ struct TimelineSurface: NSViewRepresentable {
         let prior=store.document;store.applyTransition(kind,left:pair.0.id,right:pair.1.id);return prior != store.document
     }
     override func keyDown(with event:NSEvent) {
+        if event.keyCode==53,cutDrag != nil {cutDrag=nil;snapX=nil;snapLabel=nil;needsDisplay=true;return}
+
         if store.placementProposal != nil {if event.keyCode==123{store.step(-1)}else if event.keyCode==124{store.step(1)};return}
         if event.keyCode==27 {store.selectAutomationPoint(nil);needsDisplay=true;return}
         if event.modifierFlags.contains([.command,.option]),event.charactersIgnoringModifiers=="a" {store.selectAllVisibleAutomationPoints();needsDisplay=true;return}
@@ -689,6 +785,15 @@ struct TimelineSurface: NSViewRepresentable {
         if event.modifierFlags.contains(.option),(event.keyCode==125 || event.keyCode==126) {
             let id=layoutTrackSelection ?? tracks.first(where:{$0.clips.contains{$0.id==store.selection}})?.id ?? tracks.first?.id
             if let id{_ = resizeTrack(id,by:event.keyCode==126 ? -16:16)};return
+        }
+        if event.keyCode==51,showsDecisionLanes,let id=selectedCutID {
+            cutDrag=nil;snapX=nil;snapLabel=nil
+            if let group=store.multicamGroup {
+                if group.cuts.contains(where:{$0.id==id}){store.removeMulticamCut(id,audio:false)}
+                else if group.audioCuts?.contains(where:{$0.id==id}) == true{store.removeMulticamCut(id,audio:true)}
+            }
+            if !(store.multicamGroup?.cuts.contains(where:{$0.id==id}) ?? false) && !(store.multicamGroup?.audioCuts?.contains(where:{$0.id==id}) ?? false){selectedCutID=nil}
+            needsDisplay=true;refreshAccessibility();return
         }
         if event.keyCode==51,store.currentAutomationPoint != nil {store.deleteAutomationPoint();return}
         if event.keyCode==123 {store.step(-1)} else if event.keyCode==124 {store.step(1)} else if event.keyCode==49 {store.togglePlayback()} else if event.keyCode==51 {store.deleteSelection()} else {super.keyDown(with:event)}

@@ -24,33 +24,8 @@ struct MulticamCutControls:View {
                             Button{store.removeMulticamCut(cut.id,audio:audio)}label:{Image(systemName:"minus.circle")}.help("Delete cut").accessibilityLabel("Delete cut")
                         }
                     }}
-                }.padding(.top,10).disabled(store.playing || store.checkingCameraAudio)
+                }.padding(.top,10).disabled(!store.canRefineMulticamCuts)
             }.padding(.top,12)
         }
-    }
-}
-
-extension EditorStore {
-    func editMulticamCut(_ id:UUID,audio:Bool,seconds:Double?,assetID:UUID?){
-        guard var group=multicamGroup else{return}
-        var cuts=audio ? group.audioCuts ?? []:group.cuts
-        guard let index=cuts.firstIndex(where:{$0.id==id}) else{return}
-        if let seconds{
-            guard seconds.isFinite,(0...document.sequence.duration.seconds).contains(seconds) else{error="Keep cuts inside the sequence.";return}
-            do{let position=try document.sequence.settings.frameRate.checkedQuantized(time(seconds,audio:true));guard !cuts.contains(where:{$0.id != id && $0.time==position}) else{error="A cut already exists at this frame.";return};cuts[index].time=position}catch{self.error=Self.message(error);return}
-        }
-        if let assetID{cuts[index].angleID=assetID}
-        let source=cuts[index].angleID,position=cuts[index].time
-        if source != MulticamSwitching.silenceAudioID{
-            guard (!audio || cameraAudioIDs.contains(source)),document.sequence.tracks.flatMap(\.clips).contains(where:{$0.assetID==source && $0.start<=position && position<$0.end}) else{error="This source is unavailable at the cut.";return}
-        }
-        cuts.sort{$0.time<$1.time}
-        if audio{group.audioCuts=cuts}else{group.cuts=cuts}
-        var next=document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1]=group;replace(next)
-    }
-    func removeMulticamCut(_ id:UUID,audio:Bool){
-        guard var group=multicamGroup else{return}
-        if audio{group.audioCuts?.removeAll{$0.id==id}}else{group.cuts.removeAll{$0.id==id}}
-        var next=document;next.sequence.multicamGroups[next.sequence.multicamGroups.count-1]=group;replace(next)
     }
 }
