@@ -133,7 +133,7 @@ struct TitleControls:View {
                 }
             }
             HStack{color("Text",\.color);color("Background",\.background)}
-            HStack{Text("Round");Slider(value:Binding(get:{store.selectedClip?.title?.style?.cornerRadius ?? 0},set:{v in update{$0.cornerRadius=v}}),in:0...0.1).accessibilityLabel("Background corner radius")}
+            TitleBackgroundControls(store:store)
             HStack{Text("Outline");Slider(value:Binding(get:{store.selectedClip?.title?.style?.outlineWidth ?? 0},set:{v in update{$0.outlineWidth=v}}),in:0...10).accessibilityLabel("Text outline width")}
         }
     }
