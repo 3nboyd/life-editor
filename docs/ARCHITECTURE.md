@@ -24,6 +24,13 @@ probes complete before merging into the current document and project changes
 invalidate pending imports. Timeline drags display a prospective ghost; release
 submits a validated command. It never commits a destructive overlap.
 
+Multicam cut refinement uses a baseline-bound immutable proposal. Pointer motion
+only updates a ghost; release revalidates and commits once. Video/audio decision
+lanes appear only in multicam mode, with matching numeric controls. Source coverage
+and locks are checked in changed intervals so unrelated existing camera gaps do
+not block refinement. Persisted event arrays are evaluated chronologically while
+undo restores their exact original representation.
+
 The AppKit timeline currently uses immediate drawing. WaveformCache is an actor
 with at most 24 in-memory 2048-bin summaries; it is a first display implementation,
 not the final channel-aware, disk-backed multiresolution cache. Pipeline rebuilds

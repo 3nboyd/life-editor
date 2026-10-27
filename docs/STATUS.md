@@ -30,7 +30,7 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 
 ## Required work before 1.0
 
-- Broader drift-correction coverage and richer direct cut refinement.
+- Broader drift-correction coverage and complete music/retiming workflows.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse and speed ramps; broader freeze integration.
@@ -137,5 +137,21 @@ accepts dedicated, unretimed camera tracks referenced to the group's master;
 negative preroll, reused tracks, external links, transitions and artistic slips
 require manual preparation. Ambiguous recordings remain manually alignable.
 
-Local full native/helper verification: 224 tests pass (2026-10-25). Optimized ad-hoc app build passes. These measurements are from the local
+Multicam mode now adds compact video/audio decision lanes above the media tracks.
+Boundary drags show a candidate without changing the document; release commits one
+undoable edit. Frame snapping, Option bypass, Escape cancellation and named
+accessibility targets accompany the existing numeric keyboard controls. Cuts stay
+between chronological neighbors; the opening decision stays at zero. Playback,
+armed switching, pending placement, stale projects, affected locks and newly
+unavailable source intervals reject edits. Existing unrelated camera gaps remain
+editable. Delete affects the selected decision rather than previously selected media.
+
+A four-camera native fixture checks waveform alignment with explicit review of a
+lower-confidence result, an armed hotkey pass, timeline pointer refinement,
+save/reopen, decoded ProRes frames and continuous master PCM/WAV export. The full
+Phase 2 feature gate remains open; loops/crossfades, reverse, speed ramps and the
+remaining musical tools are still required. See PROGRESS.md for the qualified
+overall estimate.
+
+Local full native/helper verification: 233 tests pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.

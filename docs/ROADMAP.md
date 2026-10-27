@@ -4,7 +4,8 @@ Status: **planned** unless marked otherwise. A model field or a control alone do
 not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
-Current pass: **Phase 2, direct multicam cut refinement**. See the
+Latest completed slice: **Phase 2, direct multicam cut refinement**. Phase 2
+continues with the remaining music and retiming tools. See the
 [progress assessment](PROGRESS.md) for implemented slices, remaining work and the
 qualified overall completion estimate. Open broad checkboxes include partial work.
 

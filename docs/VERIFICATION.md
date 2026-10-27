@@ -3,7 +3,37 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: 2026-10-25
+## Latest run: 2026-10-27
+
+Full local native/helper verification passes: **233 tests across 10 suites in
+17.510 seconds** on this M4, with the pinned helpers and
+`LIFE_RUN_MEDIA_INTEGRATION=1`. The optimized ad-hoc app build passes.
+
+Eight focused cut-refinement tests cover video/audio pointer gestures, immutable
+ghosts, snapping/Option, Escape, selected-cut Delete safety, exact undo/redo,
+chronological refinement of valid unsorted persisted arrays, affected locks,
+missing source intervals, unchanged missing tails, stale proposals and pending
+placement. Named accessibility targets and a native decision-lane bitmap are
+checked; this does not replace the full VoiceOver/usability audit.
+
+A connected fixture generates four 20-second cameras with distinct audio and known
+0/0.2/0.4/0.6-second starts plus a separate master. Three matches exceed 60%
+confidence; one approximately 52% match remains visibly flagged and receives an
+explicit manual offset review. No confidence threshold is weakened. The test
+records camera hotkeys as one undoable pass, drags a cut through real AppKit event
+handlers, saves/reopens, and compares preview against decoded ProRes frames. Its
+four-second master windows retain all 384,000 interleaved stereo samples unchanged;
+WAV output agrees within 16-bit quantization tolerance. The focused workflow also
+passed three separate process runs before the full suite.
+
+Fixture setup uses the established callback export bridge because the SDK async
+AVAssetExportSession bridge crashed on this toolchain/runtime. A subsequent native
+reader-startup crash was not reproduced after initializing AppKit before creating
+the fixture window. No production export change was made without an established
+cause. The repeated focused runs and full native run pass; broader long-running
+stress coverage remains a release requirement.
+
+## Previous run: 2026-10-25
 
 The full local native/helper suite passes: **224 tests across 10 suites in
 31.629 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.

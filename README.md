@@ -12,7 +12,7 @@ Local media, local rendering. No account, subscription, upload or watermark.
 
 **Pre-1.0 development · Apple Silicon · macOS 15+**
 
-[Build from source](#build) · [Current status](docs/STATUS.md) · [Full roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md)
+[Build from source](#build) · [Progress](docs/PROGRESS.md) · [Current status](docs/STATUS.md) · [Full roadmap](docs/ROADMAP.md) · [Verification](docs/VERIFICATION.md)
 
 ## A quiet workspace
 
@@ -73,6 +73,7 @@ inventory) is bundled. See [FFmpeg build and provenance](docs/FFMPEG.md).
 - Multicam groups with four lightweight camera previews, suggested audio-waveform alignment, and manual timing offsets.
 - Reviewed clock-drift correction with source/master anchors, preview and one-step undo.
 - Continuous master audio by default; switch video, audio, or both, replace cuts within a selected range, and preview camera choices.
+- Drag video/audio decision boundaries directly in the timeline, with a ghost preview, snapping and one-action undo.
 
 ### Export and project recovery
 
