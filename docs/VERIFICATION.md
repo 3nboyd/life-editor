@@ -3,7 +3,28 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: 2026-10-27
+## Latest run: Phase 3 text styling, 2026-10-27
+
+Full local native/helper verification passes: **240 tests across 11 suites in
+28.645 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.
+The optimized ad-hoc app build passes.
+
+New checks cover title-background validation, schema 1–5 migration to schema 6,
+future-version protection, exact legacy bitmap rendering when the new optional
+style is absent, preserved font names, independent typography/background choices,
+grouped undo and package round-trip. Pixel checks distinguish real fill, border,
+shadow and stable glyph/body geometry through typewriter reveals.
+
+Native rounded, pill and speech-bubble projects save/reopen and match decoded
+ProRes frames at multiple animation times. Expanded background/shadow controls fit
+an approximately 248-point inspector with editable numeric values. Native view
+renders are validation artifacts, not public product screenshots.
+
+The Phase 3 plan retains typography, overlays/animation, advanced color, captions
+and the combined creative workflow. This slice does not close the phase gate or
+establish the M1 performance/usability targets.
+
+## Previous run: Phase 2 refinement, 2026-10-27
 
 Full local native/helper verification passes: **233 tests across 10 suites in
 17.510 seconds** on this M4, with the pinned helpers and

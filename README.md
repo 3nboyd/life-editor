@@ -17,7 +17,7 @@ videos. A large viewer, layered timeline and direct editing keep the work in vie
 | Edit | Make it yours | Work with music |
 |---|---|---|
 | Layer video, audio, images and titles | Original filters and transitions | Waveforms, beat grids and markers |
-| Trim, split, move and arrange clips | Styled text, shapes and drawings | Volume fades, EQ and loudness tools |
+| Trim, split, move and arrange clips | Styled text, backgrounds, shapes and drawings | Volume fades, EQ and loudness tools |
 | Scrub and step through frames | Crop, transform and use safe guides | Synchronize and switch camera angles |
 | Undo edits and recover projects | Import/export SRT captions | Keep a continuous master audio track |
 

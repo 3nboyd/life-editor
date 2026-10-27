@@ -4,8 +4,9 @@ Status: **planned** unless marked otherwise. A model field or a control alone do
 not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
-Latest completed slice: **Phase 2, direct multicam cut refinement**. Phase 2
-continues with the remaining music and retiming tools. See the
+Latest completed slice: **Phase 3, shared title-background styling**. The
+[Phase 3 delivery plan](PHASE3.md) continues the creator toolkit. Phase 2 remains
+open for its music and retiming work. See the
 [progress assessment](PROGRESS.md) for implemented slices, remaining work and the
 qualified overall completion estimate. Open broad checkboxes include partial work.
 

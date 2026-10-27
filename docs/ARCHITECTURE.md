@@ -52,11 +52,12 @@ Apple references: [custom compositor](https://developer.apple.com/documentation/
 [rational time](https://developer.apple.com/documentation/coremedia/cmtime-api),
 [audio algorithms](https://developer.apple.com/documentation/avfoundation/time-pitch-algorithm-settings).
 
-Project JSON currently uses schema 5. Production reads inspect the version header
-before decoding project content. Schemas 1 through 4 migrate without changing IDs, media
-references, rational timing, automation, or editing decisions; saving writes schema 5.
+Project JSON currently uses schema 6. Production reads inspect the version header
+before decoding project content. Schemas 1 through 5 migrate without changing IDs, media
+references, rational timing, automation, or editing decisions; saving writes schema 6.
 Schema 3 marks timed adjustment-layer rendering; schema 4 adds Whites, Black Point
-and Brilliance rendering; schema 5 persists explicit camcorder dates. Older builds
+and Brilliance rendering; schema 5 persists explicit camcorder dates; schema 6 adds
+shared title background styling. Older builds
 refuse these projects instead of silently
 omitting their processing.
 Newer schemas are refused, including when replacing an existing package. Recovery
@@ -91,3 +92,11 @@ so shared boundaries cannot acquire independent rounding gaps. Document timing,
 source windows and render-parameter evaluation remain rational and unchanged.
 This boundary mapping prevents a reproduced native range-read stall with otherwise
 valid prime-denominator retimed placements. Preview and export share the compiler.
+
+
+Title background styling is optional in the document. Its absence uses the exact
+legacy background path and padding. New shapes, borders and shadows share one
+Core Text layout and bitmap cache with playback, thumbnails and export. A speech
+bubble tail extends outside the measured text body; typewriter reveals keep the
+full text's layout. Typography presets preserve independently edited backgrounds.
+Padding, border and shadow dimensions use canvas pixels, matching title font units.

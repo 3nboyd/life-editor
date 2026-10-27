@@ -78,9 +78,9 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-through 4 projects migrate to schema 5; unknown future project/recovery data is protected.
+through 5 projects migrate to schema 6; unknown future project/recovery data is protected.
 Schema boundaries prevent older readers from silently omitting adjustment-layer or
-new tonal-control or explicit camcorder-date rendering.
+new tonal-control, explicit camcorder-date or text-background rendering.
 
 Live stereo Mix sample-peak meters now decode bounded windows from the current
 playback mix in the background, with clipping, seek/mix invalidation and visible-only
@@ -153,5 +153,15 @@ Phase 2 feature gate remains open; loops/crossfades, reverse, speed ramps and th
 remaining musical tools are still required. See PROGRESS.md for the qualified
 overall estimate.
 
-Local full native/helper verification: 233 tests pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
+Phase 3 now includes shared title-background styling: none, square, rounded, pill
+and speech bubble; fill/alpha, padding, corner radius, background border and shadow.
+Actual visual choices use the same Core Text renderer as preview/export. Typography
+presets preserve the background, and typewriter reveals retain stable full-text
+bounds. Controls are disclosed and support numeric editing and grouped slider undo.
+Schema 6 preserves exact legacy rendering when the new optional styling is absent.
+Older readers refuse these projects instead of silently omitting visible styling.
+The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
+[requirement register](ROADMAP.md).
+
+Local full native/helper verification: 240 tests across 11 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
