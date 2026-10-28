@@ -168,5 +168,10 @@ position, preserving words, appearance, timing and animation.
 The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
 [requirement register](ROADMAP.md).
 
-Local full native/helper verification: 246 tests across 12 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
+Local full native/helper verification: 249 tests across 12 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
+
+The October 27 [requirements audit](AUDIT-2026-10-27.md) records UI and safety
+fixes. Timeline collapse is now remembered, multicam previews sit beside the output,
+and malformed clip clipboard data is rejected atomically. The
+[first public preview](PUBLIC-PREVIEW.md) targets November 1, separately from 1.0.

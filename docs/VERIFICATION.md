@@ -3,7 +3,37 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: typography, layouts and project gallery, 2026-10-27
+## Latest run: requirements audit and preview tooling, 2026-10-27
+
+Full local native/helper verification passes: **249 tests across 12 suites in
+18.331 seconds** on the M4. Focused workspace/clipboard checks pass (13 tests,
+4.814 seconds). The optimized app builds successfully as part of preview packaging.
+
+Native 1280 × 800 view tests verify that four camera previews sit beside and do
+not intersect the output, and remembered timeline collapse expands the viewer.
+Existing workspace/inspector layouts pass. Pitch lock uses a named icon; camera
+selection has a checkmark and accessibility state; inspector resizing exposes an
+accessibility adjustment. These checks do not establish complete manual VoiceOver
+or live-media UI acceptance. Native computer-use startup still fails on this host.
+
+The malformed clip-clipboard regression checks Int64 minimum/maximum starts,
+oversized data, unchanged project/selection/pasteboard on rejection, valid placement
+and exact undo/redo. Copy/Cut menu actions now allow text forwarding without a clip
+selection. Broader interactive text-field routing remains a manual preview check.
+
+The preview packager built a 34 MB arm64 archive from clean commit
+`cf064da8c430987adb5d7b119e471509077608e4`, verified pinned LGPL helpers and their
+source/notices, extracted the ZIP and verified its app signature. Independent
+SHA-256 verification passes; BUILD.json matches the source commit and explicitly
+records ad-hoc signing, no notarization and helper inclusion. Invalid versions,
+existing outputs, concurrent version locks and dirty source are rejected. The
+archive remains a local validation artifact, not a published release candidate.
+
+Independent review identified the clipboard crash and packaging provenance/race
+issues; the fixes were re-reviewed. The [requirements audit](AUDIT-2026-10-27.md)
+and [first-preview plan](PUBLIC-PREVIEW.md) retain manual and release gates.
+
+## Previous run: typography, layouts and project gallery, 2026-10-27
 
 Full local native/helper verification passes: **246 tests across 12 suites in
 18.596 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.
