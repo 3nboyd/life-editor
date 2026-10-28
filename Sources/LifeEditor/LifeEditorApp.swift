@@ -39,8 +39,8 @@ struct LifeEditorApp: App {
                 Button("Export SRT…"){store.exportCaptions()}
             }
             CommandGroup(replacing:.pasteboard){
-                Button("Cut"){store.cutSelection()}.keyboardShortcut("x").disabled(store.selectedIDs.isEmpty)
-                Button("Copy"){store.copySelection()}.keyboardShortcut("c").disabled(store.selectedIDs.isEmpty)
+                Button("Cut"){store.cutSelection()}.keyboardShortcut("x")
+                Button("Copy"){store.copySelection()}.keyboardShortcut("c")
                 Button("Paste"){store.pasteSelection()}.keyboardShortcut("v")
                 Button("Select All"){store.selectAll()}.keyboardShortcut("a")
             }

@@ -460,34 +460,46 @@ final class EditorStore: ObservableObject {
         guard NSApp.keyWindow?.firstResponder is NSTextView else{return false}
         return NSApp.sendAction(NSSelectorFromString(name),to:nil,from:nil)
     }
-    func copySelection(){
-        if textAction("copy:"){return}
+    @discardableResult func copySelection(to board:NSPasteboard = .general)->Bool {
+        if textAction("copy:"){return true}
         let clips=document.sequence.tracks.flatMap{track in track.clips.filter{selectedIDs.contains($0.id)}.map{ClipboardClip(clip:$0,kind:track.kind,trackName:track.name)}}
-        guard !clips.isEmpty,let data=try? JSONEncoder().encode(ClipClipboard(clips:clips,assets:document.assets)) else{return}
-        NSPasteboard.general.clearContents();NSPasteboard.general.setData(data,forType:.init("org.lifeeditor.clips"))
+        let used=Set(clips.compactMap{$0.clip.assetID})
+        guard !clips.isEmpty else{return false}
+        guard clips.count<=10_000,let data=try? JSONEncoder().encode(ClipClipboard(clips:clips,assets:document.assets.filter{used.contains($0.id)})),data.count<=8*1024*1024 else{error="Copy at most 10,000 clips / 8 MB.";return false}
+        board.clearContents();return board.setData(data,forType:.init("org.lifeeditor.clips"))
     }
-    func cutSelection(){if textAction("cut:"){return};copySelection();if !selectedIDs.isEmpty{apply(.removeMany(clipIDs:selectedIDs));selection=nil}}
-    func pasteSelection(){
+    func cutSelection(){if textAction("cut:"){return};if copySelection(),!selectedIDs.isEmpty{apply(.removeMany(clipIDs:selectedIDs));selection=nil}}
+    func pasteSelection(from board:NSPasteboard = .general){
         if textAction("paste:"){return}
-        guard let data=NSPasteboard.general.data(forType:.init("org.lifeeditor.clips")),let payload=try? JSONDecoder().decode(ClipClipboard.self,from:data),let first=payload.clips.map({$0.clip.start}).min() else{return}
-        var next=document
-        var assets:[UUID:UUID]=[:],links:[UUID:UUID]=[:],groups:[UUID:UUID]=[:]
-        let used=Set(payload.clips.compactMap{$0.clip.assetID})
-        for asset in payload.assets where used.contains(asset.id){
-            if let existing=next.assets.first(where:{$0.id==asset.id && $0.url==asset.url}){assets[asset.id]=existing.id}
-            else {var added=asset;added.id=UUID();next.assets.append(added);assets[asset.id]=added.id}
-        }
-        var inserted:Set<UUID>=[]
-        let anchorDelta=time(playhead,audio:true)-first
-        let delta=payload.clips.contains(where:{$0.kind != .audio}) ? document.sequence.settings.frameRate.quantized(anchorDelta):anchorDelta
-        for item in payload.clips {
-            var clip=item.clip;clip.id=UUID();clip.start=clip.start+delta
-            if let id=clip.assetID{clip.assetID=assets[id]}
-            if let id=clip.linkID{if links[id]==nil{links[id]=UUID()};clip.linkID=links[id]}
-            if let id=clip.groupID{if groups[id]==nil{groups[id]=UUID()};clip.groupID=groups[id]}
-            next.sequence.tracks.append(Track(name:item.trackName,kind:item.kind,clips:[clip]));inserted.insert(clip.id)
-        }
-        replace(next);selectedIDs=inserted;selection=inserted.first
+        guard let data=board.data(forType:.init("org.lifeeditor.clips")) else{return}
+        do {
+            guard data.count<=8*1024*1024 else{throw DocumentError.invalidTiming}
+            let payload=try JSONDecoder().decode(ClipClipboard.self,from:data)
+            guard !payload.clips.isEmpty,payload.clips.count<=10_000,payload.assets.count<=10_000 else{throw DocumentError.invalidTiming}
+            let input=ProjectDocument(sequence:.init(settings:document.sequence.settings,tracks:payload.clips.map{Track(name:$0.trackName,kind:$0.kind,clips:[$0.clip])}),assets:payload.assets)
+            try input.validate()
+            let used=Set(payload.clips.compactMap{$0.clip.assetID})
+            guard used.isSubset(of:Set(payload.assets.map(\.id))),let first=payload.clips.map({$0.clip.start}).min() else{throw DocumentError.invalidTiming}
+            var next=document
+            var assets:[UUID:UUID]=[:],links:[UUID:UUID]=[:],groups:[UUID:UUID]=[:]
+            for asset in payload.assets where used.contains(asset.id){
+                if let existing=next.assets.first(where:{$0.id==asset.id && $0.url==asset.url}){assets[asset.id]=existing.id}
+                else {var added=asset;added.id=UUID();next.assets.append(added);assets[asset.id]=added.id}
+            }
+            var inserted:Set<UUID>=[]
+            let anchorDelta=try time(playhead,audio:true).checkedSubtracting(first)
+            let delta=try payload.clips.contains(where:{$0.kind != .audio}) ? document.sequence.settings.frameRate.checkedQuantized(anchorDelta):anchorDelta
+            for item in payload.clips {
+                var clip=item.clip;clip.id=UUID();clip.start=try clip.start.checkedAdding(delta)
+                if let id=clip.assetID{clip.assetID=assets[id]}
+                if let id=clip.linkID{if links[id]==nil{links[id]=UUID()};clip.linkID=links[id]}
+                if let id=clip.groupID{if groups[id]==nil{groups[id]=UUID()};clip.groupID=groups[id]}
+                next.sequence.tracks.append(Track(name:item.trackName,kind:item.kind,clips:[clip]));inserted.insert(clip.id)
+            }
+            try next.validate()
+            replace(next)
+            if document==next{selectedIDs=inserted;selection=inserted.first}
+        }catch{self.error="Cannot paste these clips: \(Self.message(error))"}
     }
     func detachAudio(){
         guard let clip=selectedClip,let id=clip.assetID,document.assets.first(where:{$0.id==id})?.kind == .video,(clip.audioEnabled ?? true) else{return}
