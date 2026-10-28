@@ -112,6 +112,7 @@ struct TitleControls:View {
     @ObservedObject var store:EditorStore
     var body:some View {
         VStack(spacing:10){
+            if store.selectedCaptionTrack != nil{CaptionStyleControls(store:store)}
             TitleLayoutPresetControls(store:store)
             TextPresetControls(store:store)
             TitleFontControls(store:store)
