@@ -114,11 +114,7 @@ struct TitleControls:View {
         VStack(spacing:10){
             TitleLayoutPresetControls(store:store)
             TextPresetControls(store:store)
-            Picker("Font",selection:Binding(get:{store.selectedClip?.title?.style?.fontName ?? "Helvetica-Bold"},set:{name in update{$0.fontName=name}})){
-                ForEach([("HelveticaNeue","Plain"),("Helvetica-Bold","Bold"),("HelveticaNeue-CondensedBold","Condensed"),("Georgia","Serif"),("Noteworthy","Handwritten"),("Menlo","Typewriter")],id:\.0){name,label in Text(label).tag(name)}
-                if let current=store.selectedClip?.title?.style?.fontName,!["HelveticaNeue","Helvetica-Bold","HelveticaNeue-CondensedBold","Georgia","Noteworthy","Menlo"].contains(current){Text(current).tag(current)}
-            }
-            if let name=store.selectedClip?.title?.style?.fontName,NSFont(name:name,size:12)==nil{Label("Missing font",systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)}
+            TitleFontControls(store:store)
             Picker("Animate",selection:Binding(get:{store.selectedClip?.title?.animation?.kind.rawValue ?? ""},set:{value in
                 store.editSelected{clip in if let kind=TitleAnimationKind(rawValue:value){var animation=clip.title?.animation ?? TitleAnimation(kind:kind);animation.kind=kind;clip.title?.animation=animation}else{clip.title?.animation=nil}}
             })){
