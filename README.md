@@ -14,9 +14,9 @@ videos. A large viewer, layered timeline and direct editing keep the work in vie
 
 ## Rendered project examples
 
-<img src="docs/images/performance.png" width="640" alt="Rendered 16:9 music project with a warm look and styled title"> <img src="docs/images/social.png" width="202" alt="Rendered 9:16 social project with a title and pill caption">
+<img src="docs/images/performance.png" width="640" alt="Rendered 16:9 music project with a warm look and styled title"> <img src="docs/images/creative.png" width="202" alt="Rendered portrait project with color adjustments, an editable drawing and styled captions">
 
-Frames from Life Editor exports: a performance title and a portrait caption edit.
+Frames from Life Editor exports: a performance title and a styled portrait edit.
 [Open and reproduce these examples](docs/gallery/README.md).
 
 ## What's working
@@ -32,7 +32,9 @@ Multicam editing includes four camera previews, reviewed waveform/timecode
 alignment, optional clock-drift correction, and video/audio switching decisions.
 Drag cut boundaries in the timeline or refine them numerically.
 
-Choose installed font families and weights, or add timed emoji and transparent
+Adjust RGB curves, levels and selective HSL, edit drawing strokes directly, and
+match caption styles across a track. Choose installed font families and weights,
+or add timed emoji and transparent
 image stickers from the toolbar.
 
 Projects save as `.lifeedit` packages. Reference your originals or collect media
