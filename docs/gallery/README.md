@@ -1,10 +1,13 @@
 # Rendered project examples
 
-The README gallery shows frames decoded from Life Editor's ProRes exports at
-0.75 seconds. The landscape project uses the LA look, the Lower Third
-placement preset, a fading title and a rounded title background. The portrait
-project uses fill cropping, the Clean look, a fading multiline title and a styled
-caption imported from SRT.
+The README gallery contains frames decoded from Life Editor's ProRes exports.
+The landscape example uses the LA look, a lower-third title and a rounded
+background. The portrait is the [creative checkpoint](#creative-checkpoint), with
+RGB curves, levels, selective HSL, an edited highlighter stroke and styled SRT cues.
+
+The first recipe below also produces the earlier simple portrait example as
+`social.png`. The current README portrait is `creative.png`, generated separately
+by the connected checkpoint fixture.
 
 These are rendered project outputs. The original rehearsal photograph is
 generated fictional demo media, included in [source/rehearsal.png](source/rehearsal.png).

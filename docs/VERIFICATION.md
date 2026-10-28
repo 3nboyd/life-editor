@@ -3,7 +3,50 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: installed fonts and stickers, 2026-10-28
+## Latest run: creative controls checkpoint, 2026-10-28
+
+Full native/helper verification passes: **277 tests across 15 suites in
+51.220 seconds**, with sequential outer execution and pinned helpers. The optimized
+ad-hoc app build passes (43.72 seconds), including bundled LGPL helper verification.
+An additional high-resolution checkpoint run passes in 2.145 seconds.
+
+Five advanced-color checks cover schema 9 persistence/future-format protection,
+range/black-white ordering, grouped undo/reset, narrow 248-point controls, neutral
+kernel identity, channel selectivity, alpha and native adjustment-layer
+preview/ProRes agreement. Curves have five fixed input knots; HSL has six bands.
+These static controls do not add general animation or Apple Photos processing.
+
+Seven drawing checks cover stroke style/geometry/opacity, lock rejection, direct
+selection and transformed coordinates, narrow inspector layout, highlighter alpha,
+package reopen and decoded export. Review identified two eraser defects: normalized
+distance over-erased on non-square canvases, and sparse pointer samples skipped
+crossed strokes. Pixel-metric swept-segment tests now cover landscape and portrait
+cases; pending outlines transform stroke widths/caps and share the eraser radius.
+A read-only randomized broad-phase reproduction checked 20,000 segment pairs with
+no missed candidate intersections. These fixes were independently re-reviewed.
+
+The exact fresh-project undo test exposed independently initialized document IDs
+in the UI and command state. Initializing the UI from the command document fixes
+that real identity mismatch; a separate first-title edit/undo/redo regression passes.
+
+Caption checks verify all four actual thumbnails, valid extrema, preserved
+animation/effects/envelopes, lock rejection, exact cue timing/text, SRT encoding,
+package data and one-action track matching. The connected styled-social fixture
+combines advanced color, editable drawing and matched SRT cues, collects its media,
+removes only the fixture import copy, reopens and exports. Actual overlay pixels
+and representative decoded frames agree with preview.
+
+The published 720 × 1280 portrait PNG is byte-identical to the extracted ProRes
+frame at 1.75 seconds. Its generated fictional source, editable collected project
+and reproducible command are documented in the [gallery](gallery/README.md).
+It is rendered project output, not a running-app screenshot.
+
+Native computer-use startup still fails on this host. Full manual app/VoiceOver,
+musician/student usability, M1 measurements and remaining release gates are not
+claimed complete. See [the checkpoint](CREATIVE-CHECKPOINT.md) for implemented
+scope and [the preview plan](PUBLIC-PREVIEW.md) for outstanding acceptance.
+
+## Previous run: installed fonts and stickers, 2026-10-28
 
 Full local native/helper verification passes: **261 tests across 14 suites in
 43.102 seconds**, using `scripts/test.sh --no-parallel` with

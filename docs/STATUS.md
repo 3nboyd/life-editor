@@ -34,7 +34,7 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse and speed ramps; broader freeze integration.
-- Advanced color controls; complete social text animation
+- White-balance sampling; complete social text animation
   and animated reframing. Local transcription
   has capability/privacy guards and source-time mapping but needs real speech QA.
 - Comprehensive metadata/VFR/HDR handling and broad tested codec/container matrix.
@@ -78,7 +78,7 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-through 7 projects migrate to schema 8; unknown future project/recovery data is protected.
+through 8 projects migrate to schema 9; unknown future project/recovery data is protected.
 Schema boundaries prevent older readers from silently omitting adjustment-layer or
 new tonal-control, explicit camcorder-date or text-background rendering.
 
@@ -168,7 +168,7 @@ position, preserving words, appearance, timing and animation.
 The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
 [requirement register](ROADMAP.md).
 
-Local full native/helper verification: 261 tests across 14 suites pass (2026-10-28). Optimized ad-hoc app build passes. These measurements are from the local
+Local full native/helper verification: 277 tests across 15 suites pass (2026-10-28). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
 
 The October 27 [requirements audit](AUDIT-2026-10-27.md) records UI and safety
@@ -185,3 +185,9 @@ picker. PostScript names persist; unavailable names remain until explicitly
 replaced. Emoji and imported-image stickers are timed title/image objects with
 existing transform, trim and opacity controls. Image alpha, collection, undo and
 shared preview/export are verified; no new schema or bundled fonts are needed.
+
+The [creative controls checkpoint](CREATIVE-CHECKPOINT.md) adds static master/RGB
+curves, levels and selective HSL; editable drawing strokes/points and accurate
+erasing; four caption styles and track matching. Schema 9 protects the new color
+processing. A connected portable portrait project reproduces decoded export after
+reopening. The new-project first-edit undo identity mismatch is also fixed.

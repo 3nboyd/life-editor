@@ -22,10 +22,10 @@ Layered editing, waveform/automation tools, original effects, styled titles,
 SRT captions, multicam switching and video/audio exports are implemented. The
 repository's progress and tested-format documents record the verified coverage.
 
-Loops/crossfades, reverse, speed ramps, advanced color, general keyframes and
+Loops/crossfades, reverse, speed ramps, white-balance sampling, general keyframes and
 parts of the creator toolkit remain unfinished. M1 performance, complete
 accessibility, musician/student usability and the full failure matrix have not
-passed their release gates. Projects currently use schema 8; older builds may
+passed their release gates. Projects currently use schema 9; older builds may
 refuse them. Preserve a copy before opening a project in a newer preview.
 
 See BUILD.json for the exact commit, signing status and helper inclusion.

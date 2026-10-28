@@ -4,7 +4,9 @@ Status: **planned** unless marked otherwise. A model field or a control alone do
 not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
-Latest completed slices: **Phase 3 title backgrounds, alignment/spacing and
+Latest checkpoint: [creative controls](CREATIVE-CHECKPOINT.md): RGB curves, levels,
+selective HSL, editable drawing and reusable caption styles. Earlier completed
+slices: **Phase 3 title backgrounds, alignment/spacing and
 reusable layouts, installed fonts/weights and image/emoji stickers; track solo,
 workspace and clipboard safety fixes**. The
 [Phase 3 delivery plan](PHASE3.md) continues the creator toolkit. Phase 2 remains
@@ -77,7 +79,7 @@ Gate: four cameras + separate audio, switching pass/refinement/export with conti
 - [ ] Plain/bold/condensed/serif/handwritten/outline/neon/typewriter text; solid/translucent/square/rounded/pill/bubble backgrounds; all typography/padding/border/shadow/opacity/alignment controls.
 - [ ] Fade/slide/pop/scale/bounce/typewriter/word-highlight; titles/lower-thirds/labels/lyrics/captions; emoji/imported stickers; editable rectangles/rounded/circle/line/arrow.
 - [ ] Viewer select/transform/crop handles, double-click text, contextual alignment; keyboard drag alternatives; timed/keyframed text/shapes/stickers/drawings.
-- [ ] Pen/highlighter/eraser/width/opacity/editable normalized strokes.
+- [x] Pen/highlighter/whole-stroke eraser/width/opacity/editable normalized strokes.
 - [ ] Shared hue/SV/RGB/HEX/alpha/color-space/eyedropper/recent/saved color popover.
 - [ ] Free/ratio crop/rotate/flip/straighten/fit-fill/animated reframing and non-exported social safe guides.
 - [ ] Manual captions/SRT import-export/burn-in/social styles/word timing; optional Apple Speech on-device capability/language checks, no network fallback.
