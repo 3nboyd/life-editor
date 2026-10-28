@@ -156,6 +156,7 @@ final class EditorStore: ObservableObject {
     var projectGeneration = 0
     enum InspectorPanel: String, CaseIterable { case media, title, clip, audio, multicam, effects, drawing, markers }
     init() {
+        document=editor.document
         player.automaticallyWaitsToMinimizeStalling=false
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             Task { @MainActor in
