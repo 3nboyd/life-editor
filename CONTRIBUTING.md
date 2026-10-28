@@ -21,3 +21,14 @@ No cloud services, mandatory AI, proprietary assets or substantial dependency
 license changes without the owner's approval. Do not commit credentials/signing
 identities. Ad-hoc builds are development builds. Distribution signing and
 notarization require the owner's credentials and release authorization.
+
+For the full hardware-media suite, run on a supported Mac with the pinned helpers:
+
+```sh
+LIFE_RUN_MEDIA_INTEGRATION=1 LIFE_HELPER_DIRECTORY="$PWD/.local-helpers" \
+scripts/test.sh --no-parallel
+```
+
+Sequential outer execution avoids running every hardware-codec fixture at once.
+The dedicated export/cancellation stress tests still run concurrent jobs internally.
+Ordinary source checks can continue to use `scripts/test.sh`.

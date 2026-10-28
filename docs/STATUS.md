@@ -34,8 +34,8 @@ multicam red→blue cuts, codecs/channels, collection transfer and cancellation.
 - Broader linked/group splice coverage, complete track controls,
   full keyframe copy/paste/multi-point editing and animation of other parameters.
 - Loops/crossfades/reverse and speed ramps; broader freeze integration.
-- Advanced color controls; complete social text animation,
-  stickers and animated reframing. Local transcription
+- Advanced color controls; complete social text animation
+  and animated reframing. Local transcription
   has capability/privacy guards and source-time mapping but needs real speech QA.
 - Comprehensive metadata/VFR/HDR handling and broad tested codec/container matrix.
 - Complete native document integration and migration paths; disconnected/full-disk
@@ -168,7 +168,7 @@ position, preserving words, appearance, timing and animation.
 The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
 [requirement register](ROADMAP.md).
 
-Local full native/helper verification: 255 tests across 14 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
+Local full native/helper verification: 261 tests across 14 suites pass (2026-10-28). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
 
 The October 27 [requirements audit](AUDIT-2026-10-27.md) records UI and safety
@@ -179,3 +179,9 @@ and malformed clip clipboard data is rejected atomically. The
 Audio and video tracks now expose additive audio solo in both the inspector and
 timeline header, including empty tracks. Mute overrides solo; hidden video keeps
 its audio. Solo does not hide pictures. State persists in schema 8 and is undoable.
+
+Installed font families and native faces/weights now have a searchable compact
+picker. PostScript names persist; unavailable names remain until explicitly
+replaced. Emoji and imported-image stickers are timed title/image objects with
+existing transform, trim and opacity controls. Image alpha, collection, undo and
+shared preview/export are verified; no new schema or bundled fonts are needed.

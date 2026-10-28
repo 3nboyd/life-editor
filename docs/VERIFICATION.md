@@ -3,7 +3,43 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: track solo and personal-project workflow, 2026-10-27
+## Latest run: installed fonts and stickers, 2026-10-28
+
+Full local native/helper verification passes: **261 tests across 14 suites in
+43.102 seconds**, using `scripts/test.sh --no-parallel` with
+`LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned helpers. The optimized ad-hoc app build
+and bundled-helper verification pass. Hosted source CI is checked after publishing.
+
+Three focused font tests pass. They check installed family/face metadata, matching
+weight/italic/width traits, aliases absent from the family catalog, preserved
+missing names, unchanged styling and exact undo. Actual regular/bold selections
+save to a package, reopen, produce distinct text and agree between playback preview
+and decoded ProRes export. Font choices persist existing PostScript-name fields;
+no font files or new schema fields are bundled.
+
+Three focused sticker tests pass. Imported PNGs retain alpha over a lower picture,
+enter/exit at their trimmed boundaries, collect portably and reopen after the
+fixture's original import copies are removed. Insertion is undoable and cancellable;
+a project-generation check prevents a completed probe editing a replacement project.
+Emoji remain editable timed titles and render actual installed color glyphs through
+the same Core Text path. Tests compare preview and decoded export, color pixels,
+serialization and undo. Controls use one compact toolbar icon/popover.
+
+The initial parallel full-native run hit `exportUnavailable` in four existing
+media fixtures. All four passed in isolation (3.864 seconds), then the complete
+suite passed sequentially as reported above. The failure is associated with the
+fully parallel native workload; its exact underlying framework/resource cause is
+not established. Production queue/admission limits and encoding tolerances were
+unchanged. Dedicated concurrent-export/cancellation and cold-reader stress tests
+still run their internal concurrent workloads in the sequential suite.
+
+Independent source review found no actionable regression in font preservation,
+import cancellation/project changes, placement/recording guards or shared sticker
+rendering. Actual standalone-app keyboard/VoiceOver interaction and human usability
+remain public-preview gates. Native computer-use startup still fails on this host;
+no reconstructed screenshots were published.
+
+## Previous run: track solo and personal-project workflow, 2026-10-27
 
 Full native/helper verification passes: **255 tests across 14 suites in
 20.162 seconds** on the local M4. A final strengthened personal-project check

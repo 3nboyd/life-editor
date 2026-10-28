@@ -19,8 +19,11 @@ close those requirements.
 
 Alignment, letter/line spacing and four size/position recipes (Title, Lower Third,
 Label and Lyrics) are now integrated with shared Core Text layout, document
-protection and undo. Font weight, complete word-highlight behavior and the rest of
-this slice remain open. The [rendered gallery](gallery/README.md) demonstrates
+protection and undo. Installed font families and native face/weight selection now
+preserve PostScript names, including unavailable fonts until explicit replacement.
+Timed emoji and imported-image stickers use existing title/image objects, shared
+rendering and editable transforms. Word highlighting, general keyframes and the
+remaining animation/color work stay open. The [rendered gallery](gallery/README.md) demonstrates
 exported landscape and portrait projects; it does not close the combined workflow gate.
 
 ## Rules for every slice

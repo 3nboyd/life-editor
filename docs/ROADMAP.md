@@ -5,7 +5,8 @@ not complete a feature. Completion requires UI, persistence, undo, preview,
 export and relevant verification. This register retains the owner's full scope.
 
 Latest completed slices: **Phase 3 title backgrounds, alignment/spacing and
-reusable layouts; track solo, workspace and clipboard safety fixes**. The
+reusable layouts, installed fonts/weights and image/emoji stickers; track solo,
+workspace and clipboard safety fixes**. The
 [Phase 3 delivery plan](PHASE3.md) continues the creator toolkit. Phase 2 remains
 open for its music and retiming work. See the
 [progress assessment](PROGRESS.md) for implemented slices, remaining work and the

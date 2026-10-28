@@ -24,13 +24,16 @@ Frames from Life Editor exports: a performance title and a portrait caption edit
 | Edit | Make it yours | Work with music |
 |---|---|---|
 | Layer video, audio, images and titles | Original filters and transitions | Waveforms, beat grids and markers |
-| Trim, split, move and arrange clips | Styled text, backgrounds, shapes and drawings | Volume fades, track solo and audio tools |
+| Trim, split, move and arrange clips | Styled text, backgrounds, emoji and image stickers | Volume fades, track solo and audio tools |
 | Scrub and step through frames | Crop, transform and use safe guides | Synchronize and switch camera angles |
 | Undo edits and recover projects | Import/export SRT captions | Keep a continuous master audio track |
 
 Multicam editing includes four camera previews, reviewed waveform/timecode
 alignment, optional clock-drift correction, and video/audio switching decisions.
 Drag cut boundaries in the timeline or refine them numerically.
+
+Choose installed font families and weights, or add timed emoji and transparent
+image stickers from the toolbar.
 
 Projects save as `.lifeedit` packages. Reference your originals or collect media
 into a portable project. Preview and export use the same compositor; exports use
