@@ -46,7 +46,12 @@ public enum NativeEffectRegistry {
         ("hue","Hue",-180,180,0),("bloom","Bloom",0,1,0),("sharpen","Sharpen",0,2,0),
         ("clarity","Clarity",0,2,0),("noiseReduction","Noise Reduction",0,1,0),("vignette","Vignette",0,2,0),("grain","Grain",0,1,0)
     ].map { key,name,lower,upper,initial in EffectDefinition(stableID:"life.adjust."+key,name:name,parameters:[.init(name:"value",defaultValue:initial,range:lower...upper)]) }
-    public static func definition(for stableID: String) -> EffectDefinition? { (definitions+adjustments).first { $0.stableID == stableID } }
+    public static let advancedAdjustments:[EffectDefinition] = [
+        .init(stableID:"life.adjust.curves",name:"RGB Curves",parameters:AdvancedColor.curveChannels.flatMap { channel in (0...4).map { .init(name:"\(channel)\($0)",defaultValue:Double($0)/4,range:0...1,supportsAnimation:false) } },supportsAnimation:false),
+        .init(stableID:"life.adjust.levels",name:"Levels",parameters:[.init(name:"black",defaultValue:0,range:0...0.99,supportsAnimation:false),.init(name:"white",defaultValue:1,range:0.01...1,supportsAnimation:false),.init(name:"gamma",defaultValue:1,range:0.1...4,supportsAnimation:false)],supportsAnimation:false),
+        .init(stableID:"life.adjust.hsl",name:"HSL",parameters:AdvancedColor.hueBands.flatMap { band in [.init(name:band+"Hue",defaultValue:0,range:-60...60,supportsAnimation:false),.init(name:band+"Saturation",defaultValue:0,range:-1...1,supportsAnimation:false),.init(name:band+"Lightness",defaultValue:0,range:-1...1,supportsAnimation:false)] },supportsAnimation:false)
+    ]
+    public static func definition(for stableID: String) -> EffectDefinition? { (definitions+adjustments+advancedAdjustments).first { $0.stableID == stableID } }
     public static func make(_ stableID: String, strength: Double = 1, seed: UInt64 = 0) -> EffectInstance {
         EffectInstance(stableID:stableID,parameters:Dictionary(uniqueKeysWithValues:(definition(for:stableID)?.parameters ?? []).map { ($0.name,$0.defaultValue) }),strength:strength,seed:seed)
     }

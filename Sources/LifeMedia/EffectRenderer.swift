@@ -57,6 +57,7 @@ enum EffectRenderer {
                 let requested = effect.parameters["value"] ?? definition?.defaultValue ?? 0
                 let value = max(definition?.range.lowerBound ?? -10000, min(definition?.range.upperBound ?? 10000, requested))
                 switch key {
+                case "curves", "levels", "hsl": image=AdvancedColorRenderer.apply(effect,to:image)
                 case "exposure": image = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": value])
                 case "brightness": controls(1, value)
                 case "contrast": controls(1, 0, value)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// The small header is decoded before interpreting any schema-specific project content.
-/// Migration changes only the version: v1–v7 data has lossless Codable representations; absent solo state defaults to off.
+/// Migration changes only the version: v1–v8 data has lossless Codable representations; absent solo state defaults to off.
 enum ProjectMigration {
     private struct Header:Decodable { let version:Int }
     static func headerVersion(in data:Data)throws->Int {try JSONDecoder().decode(Header.self,from:data).version}

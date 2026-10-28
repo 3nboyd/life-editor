@@ -35,5 +35,5 @@ import Testing
         var expected=legacy;expected.version=ProjectDocument.currentVersion;#expect(migrated==expected)
         #expect(migrated.sequence.tracks[0].clips[0].title?.style?.backgroundStyle==nil)
     }
-    #expect(throws:DocumentError.unsupportedVersion(9)){try ProjectDocument.decode(Data(#"{"version":9,"opaque":true}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(10)){try ProjectDocument.decode(Data(#"{"version":10,"opaque":true}"#.utf8))}
 }

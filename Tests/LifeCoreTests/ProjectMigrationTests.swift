@@ -97,7 +97,7 @@ private let schemaTwoAdjustment=Data(#"""
     try AdjustmentLayers.validate(in:migrated)
     #expect(try ProjectDocument.decode(migrated.encoded())==migrated)
     #expect(throws:DocumentError.unsupportedVersion(2)){try legacy.encoded()}
-    #expect(throws:DocumentError.unsupportedVersion(9)){try ProjectDocument.decode(Data(#"{"version":9,"sequence":{"unknownNewLayout":true}}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(10)){try ProjectDocument.decode(Data(#"{"version":10,"sequence":{"unknownNewLayout":true}}"#.utf8))}
 }
 
 @Test func migrationPreservesSchemaThreeLayerDecisionsWithoutRewritingEffects()throws{

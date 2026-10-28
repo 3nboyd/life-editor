@@ -118,7 +118,7 @@ public struct Sequence: Codable, Equatable, Sendable {
     public var duration: RationalTime { tracks.flatMap(\.clips).map(\.end).max() ?? .zero }
 }
 public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
-    public static let currentVersion = 8
+    public static let currentVersion = 9
     public var version: Int; public var id: UUID; public var name: String; public var sequence: Sequence; public var assets: [MediaAsset]
     public init(id: UUID = UUID(), name: String = "Untitled", sequence: Sequence = .init(), assets: [MediaAsset] = []) { self.version=Self.currentVersion; self.id=id; self.name=name; self.sequence=sequence; self.assets=assets }
     public static func decode(_ data: Data) throws -> Self {
@@ -162,6 +162,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
                 guard animation.isValid, validTime(try animation.elapsedTime(at:clip.duration),signed:true) else { throw DocumentError.invalidTiming }
             }
             for effect in clip.effects ?? [] {
+                guard AdvancedColor.isValid(effect) else { throw DocumentError.invalidTiming }
                 guard !effect.stableID.isEmpty, effect.strength.isFinite, (0...1).contains(effect.strength), effect.parameters.values.allSatisfy(\.isFinite) else { throw DocumentError.invalidTiming }
                 if let definition=NativeEffectRegistry.definition(for:effect.stableID) {
                     for parameter in definition.parameters {

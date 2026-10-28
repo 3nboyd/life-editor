@@ -19,5 +19,5 @@ import Testing
         }
     }
     #expect(TitleTypography(letterSpacing:-20,lineSpacing:512).isValid)
-    #expect(throws:DocumentError.unsupportedVersion(9)){try ProjectDocument.decode(Data(#"{"version":9}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(10)){try ProjectDocument.decode(Data(#"{"version":10}"#.utf8))}
 }

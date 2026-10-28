@@ -31,7 +31,7 @@ import Testing
         var sequence=try #require(json["sequence"] as? [String:Any]),tracks=try #require(sequence["tracks"] as? [[String:Any]])
         tracks[0].removeValue(forKey:"isSoloed");sequence["tracks"]=tracks;json["sequence"]=sequence
         let migrated=try ProjectDocument.decode(JSONSerialization.data(withJSONObject:json))
-        #expect(!migrated.sequence.tracks[0].isSoloed && migrated.version==8)
+        #expect(!migrated.sequence.tracks[0].isSoloed && migrated.version==ProjectDocument.currentVersion)
         for kind in [TrackKind.image,.title,.caption,.shape,.drawing,.adjustment] {
             let invalid=ProjectDocument(sequence:.init(tracks:[.init(name:"Invalid",kind:kind,isSoloed:true)]))
             #expect(throws:DocumentError.invalidTiming){try invalid.validate()}

@@ -54,6 +54,7 @@ struct EffectBrowser:View {
             }else{
                 ScrollView{
                     VStack(alignment:.leading,spacing:12){
+                        AdvancedColorControls(store:store)
                         ForEach(NativeEffectRegistry.adjustments){definition in
                             if let parameter=definition.parameters.first {
                                 HStack{Text(definition.name);Spacer();Text(String(format:"%.2f",value(definition.stableID,parameter))).font(.caption.monospacedDigit()).foregroundStyle(.secondary)}
