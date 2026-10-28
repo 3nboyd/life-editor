@@ -510,6 +510,10 @@ extension RationalTime {
 
     static func applyEnvelope(_ envelope: AutomationEnvelope, to input: AVMutableAudioMixInputParameters,
                                       start: RationalTime, duration: RationalTime) {
+        // Seed the initial gain before a leading empty composition segment.
+        // Otherwise AVFoundation can retain its default unity gain through the
+        // first ramp when a trimmed clip starts after zero (playback and export).
+        input.setVolume(Float(envelope.value(at:.zero)),at:.zero)
         let boundaries = Array(Set([RationalTime.zero, duration] + envelope.points.map { $0.time - envelope.evaluationOffset }.filter { $0 > .zero && $0 < duration })).sorted()
         for (left, right) in zip(boundaries, boundaries.dropFirst()) {
             let interpolation = envelope.points.sorted { $0.time < $1.time }.last { $0.time <= left + envelope.evaluationOffset }?.interpolation ?? .linear
