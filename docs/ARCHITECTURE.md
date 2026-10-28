@@ -52,12 +52,12 @@ Apple references: [custom compositor](https://developer.apple.com/documentation/
 [rational time](https://developer.apple.com/documentation/coremedia/cmtime-api),
 [audio algorithms](https://developer.apple.com/documentation/avfoundation/time-pitch-algorithm-settings).
 
-Project JSON currently uses schema 6. Production reads inspect the version header
-before decoding project content. Schemas 1 through 5 migrate without changing IDs, media
-references, rational timing, automation, or editing decisions; saving writes schema 6.
+Project JSON currently uses schema 7. Production reads inspect the version header
+before decoding project content. Schemas 1 through 6 migrate without changing IDs, media
+references, rational timing, automation, or editing decisions; saving writes schema 7.
 Schema 3 marks timed adjustment-layer rendering; schema 4 adds Whites, Black Point
 and Brilliance rendering; schema 5 persists explicit camcorder dates; schema 6 adds
-shared title background styling. Older builds
+shared title background styling; schema 7 adds text alignment and spacing. Older builds
 refuse these projects instead of silently
 omitting their processing.
 Newer schemas are refused, including when replacing an existing package. Recovery

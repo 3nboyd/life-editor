@@ -78,7 +78,7 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-through 5 projects migrate to schema 6; unknown future project/recovery data is protected.
+through 6 projects migrate to schema 7; unknown future project/recovery data is protected.
 Schema boundaries prevent older readers from silently omitting adjustment-layer or
 new tonal-control, explicit camcorder-date or text-background rendering.
 
@@ -160,8 +160,13 @@ presets preserve the background, and typewriter reveals retain stable full-text
 bounds. Controls are disclosed and support numeric editing and grouped slider undo.
 Schema 6 preserves exact legacy rendering when the new optional styling is absent.
 Older readers refuse these projects instead of silently omitting visible styling.
+Text now supports left/center/right alignment and canvas-point letter/line spacing,
+with stable typewriter layout, grouped undo and shared preview/export rendering.
+Schema 7 preserves nil legacy typography and protects new styling from older readers.
+Four reusable layouts (Title, Lower Third, Label and Lyrics) change only size and
+position, preserving words, appearance, timing and animation.
 The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
 [requirement register](ROADMAP.md).
 
-Local full native/helper verification: 240 tests across 11 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
+Local full native/helper verification: 246 tests across 12 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.

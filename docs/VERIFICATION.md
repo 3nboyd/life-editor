@@ -3,7 +3,36 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: Phase 3 text styling, 2026-10-27
+## Latest run: typography, layouts and project gallery, 2026-10-27
+
+Full local native/helper verification passes: **246 tests across 12 suites in
+18.596 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.
+The optimized ad-hoc app build passes (42.40 seconds).
+
+New checks cover schema 7 migration/protection, optional legacy typography,
+actual glyph alignment and letter/line spacing, stable typewriter geometry,
+preserved appearance/content/timing, grouped undo, layout recipe thumbnails,
+small-canvas sizes, locked-track rejection and package round-trip. Native title
+preview agrees with decoded ProRes output at partial and completed reveal times.
+Independent review found no additional actionable regression in the scoped changes.
+
+The opt-in gallery generator separately passes (one test, 2.633 seconds). It
+collects and reopens two projects, compares preview to decoded export, and writes
+the exact published frames. These are rendered output examples using generated
+fictional source media, not app screenshots. Native computer-use capture is
+unavailable on this host; no reconstructed UI was published.
+
+An earlier full run under concurrent build/export load timed out in the existing
+15-second still-image/audio export fixture. It passed in isolation (1.124 seconds),
+and the subsequent full run above passed. The deadline was not weakened. The local
+CLT provides Testing but lacks its Foundation attachment module; the test script
+uses the installed framework without auto-importing that absent attachment overlay.
+Production app compilation is unchanged. Hosted CI is checked after publication.
+
+Typography weight, word highlighting, the remaining Phase 2 features and the
+full release/usability/performance gates remain open.
+
+## Previous run: Phase 3 text styling, 2026-10-27
 
 Full local native/helper verification passes: **240 tests across 11 suites in
 28.645 seconds**, with `LIFE_RUN_MEDIA_INTEGRATION=1` and the pinned local helpers.
