@@ -64,8 +64,17 @@ public struct Clip: Identifiable, Codable, Equatable, Sendable {
 }
 public struct Track: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID; public var name: String; public var kind: TrackKind; public var clips: [Clip]
-    public var isMuted: Bool; public var isHidden: Bool; public var isLocked: Bool
-    public init(id: UUID = UUID(), name: String, kind: TrackKind, clips: [Clip] = [], isMuted: Bool = false, isHidden: Bool = false, isLocked: Bool = false) { self.id=id; self.name=name; self.kind=kind; self.clips=clips; self.isMuted=isMuted; self.isHidden=isHidden; self.isLocked=isLocked }
+    public var isMuted: Bool; public var isHidden: Bool; public var isLocked: Bool; public var isSoloed: Bool
+    public init(id: UUID = UUID(), name: String, kind: TrackKind, clips: [Clip] = [], isMuted: Bool = false, isHidden: Bool = false, isLocked: Bool = false, isSoloed: Bool = false) { self.id=id; self.name=name; self.kind=kind; self.clips=clips; self.isMuted=isMuted; self.isHidden=isHidden; self.isLocked=isLocked; self.isSoloed=isSoloed }
+    public var supportsAudio: Bool { kind == .video || kind == .audio }
+    private enum CodingKeys: String, CodingKey { case id, name, kind, clips, isMuted, isHidden, isLocked, isSoloed }
+    public init(from decoder: any Decoder) throws {
+        let c=try decoder.container(keyedBy:CodingKeys.self)
+        id=try c.decode(UUID.self,forKey:.id); name=try c.decode(String.self,forKey:.name)
+        kind=try c.decode(TrackKind.self,forKey:.kind); clips=try c.decode([Clip].self,forKey:.clips)
+        isMuted=try c.decode(Bool.self,forKey:.isMuted); isHidden=try c.decode(Bool.self,forKey:.isHidden); isLocked=try c.decode(Bool.self,forKey:.isLocked)
+        isSoloed=try c.decodeIfPresent(Bool.self,forKey:.isSoloed) ?? false
+    }
 }
 public struct Marker: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID; public var time: RationalTime; public var duration: RationalTime; public var name: String; public var note: String; public var clipID: UUID?; public var color: RGBAColor?
@@ -102,10 +111,14 @@ public struct MusicalGrid: Codable, Equatable, Sendable {
 public struct Sequence: Codable, Equatable, Sendable {
     public var settings: ProjectSettings; public var tracks: [Track]; public var markers: [Marker]; public var multicamGroups: [MulticamGroup]; public var musicalGrid: MusicalGrid?; public var transitions: [VideoTransition]?
     public init(settings: ProjectSettings = .init(), tracks: [Track] = [], markers: [Marker] = [], multicamGroups: [MulticamGroup] = [], musicalGrid: MusicalGrid? = nil, transitions: [VideoTransition]? = nil) { self.settings=settings; self.tracks=tracks; self.markers=markers; self.multicamGroups=multicamGroups; self.musicalGrid=musicalGrid; self.transitions=transitions }
+    /// Solo is additive across audio-capable tracks; mute always wins. Hidden controls video only.
+    public func isAudioAudible(on track: Track) -> Bool {
+        track.supportsAudio && !track.isMuted && (!tracks.contains { $0.supportsAudio && $0.isSoloed } || track.isSoloed)
+    }
     public var duration: RationalTime { tracks.flatMap(\.clips).map(\.end).max() ?? .zero }
 }
 public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
-    public static let currentVersion = 7
+    public static let currentVersion = 8
     public var version: Int; public var id: UUID; public var name: String; public var sequence: Sequence; public var assets: [MediaAsset]
     public init(id: UUID = UUID(), name: String = "Untitled", sequence: Sequence = .init(), assets: [MediaAsset] = []) { self.version=Self.currentVersion; self.id=id; self.name=name; self.sequence=sequence; self.assets=assets }
     public static func decode(_ data: Data) throws -> Self {
@@ -182,6 +195,7 @@ public struct ProjectDocument: Identifiable, Codable, Equatable, Sendable {
             }
         }
         for track in sequence.tracks {
+            guard !track.isSoloed || track.supportsAudio else { throw DocumentError.invalidTiming }
             let ordered=track.clips.sorted { $0.start < $1.start }
             for (left,right) in zip(ordered,ordered.dropFirst()) where left.end > right.start { throw DocumentError.overlap }
         }
@@ -208,13 +222,13 @@ public struct ProjectSnapshot: Sendable { public let document: ProjectDocument; 
 public struct EvaluatedClip: Sendable { public let clip: Clip; public let trackID: UUID; public let sourceTime: RationalTime; public let volume: Double; public let opacity: Double }
 public enum TimelineEvaluator {
     public static func evaluate(_ snapshot: ProjectSnapshot, at time: RationalTime) -> [EvaluatedClip] {
-        snapshot.document.sequence.tracks.filter { !$0.isHidden }.flatMap { track in
+        snapshot.document.sequence.tracks.flatMap { track in
             track.clips.filter { $0.start <= time && time < $0.end }.compactMap { clip -> EvaluatedClip? in
                 guard let local=try? time.checkedSubtracting(clip.start),
                       let source=try? clip.checkedSourceTime(at:time),
                       let volume=try? clip.volume.checkedValue(at:local),
                       let opacity=try? clip.opacity.checkedValue(at:local) else { return nil }
-                return EvaluatedClip(clip:clip,trackID:track.id,sourceTime:source,volume:track.isMuted ? 0 : volume,opacity:opacity)
+                return EvaluatedClip(clip:clip,trackID:track.id,sourceTime:source,volume:snapshot.document.sequence.isAudioAudible(on:track) && (clip.audioEnabled ?? true) ? volume : 0,opacity:track.isHidden ? 0 : opacity)
             }
         }
     }

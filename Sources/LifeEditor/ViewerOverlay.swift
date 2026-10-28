@@ -14,7 +14,7 @@ struct ViewerOverlay:View {
             let origin=CGPoint(x:(geometry.size.width-canvas.width)/2,y:(geometry.size.height-canvas.height)/2)
             ZStack {
                 Color.clear.contentShape(Rectangle()).onTapGesture {
-                    let active=Array(TimelineEvaluator.evaluate(.init(document:store.document),at:store.time(store.playhead)).reversed().filter{ evaluated in store.document.sequence.tracks.first(where:{$0.id==evaluated.trackID})?.kind != .audio })
+                    let active=Array(TimelineEvaluator.evaluate(.init(document:store.document),at:store.time(store.playhead)).reversed().filter{ evaluated in store.document.sequence.tracks.first(where:{$0.id==evaluated.trackID}).map{!$0.isHidden && $0.kind != .audio} ?? false })
                     if NSEvent.modifierFlags.contains(.shift),let current=active.firstIndex(where:{$0.clip.id==store.selection}),current+1<active.count {store.selection=active[current+1].clip.id}
                     else {store.selection=active.first?.clip.id}
                 }

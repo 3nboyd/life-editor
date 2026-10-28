@@ -377,7 +377,7 @@ extension RationalTime {
                     let transform = try await source.load(.preferredTransform)
                     layers.append(RenderLayer(trackID: target.trackID, clip: clip, transform: transform, titleImage: nil, multicam: group, renderStart: renderStart, renderEnd: renderEnd))
                 }
-                if !track.isMuted, (clip.audioEnabled ?? true),
+                if document.sequence.isAudioAudible(on:track), (clip.audioEnabled ?? true),
                    let source = try await asset.loadTracks(withMediaType: .audio).first,
                    let target = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
                     var envelope = clip.volume

@@ -11,7 +11,7 @@ import Testing
     try ProjectPackage.write(document,to:root);#expect(try ProjectPackage.read(from:root)==document)
     for family in TextFamily.allCases{#expect(try TextPresets.applying(family,to:clip).title?.style?.typography==layout)}
     var legacy=document;legacy.version=6;legacy.sequence.tracks[0].clips[0].title?.style?.typography=nil
-    let migrated=try ProjectDocument.decode(JSONEncoder().encode(legacy));#expect(migrated.version==7);#expect(migrated.sequence.tracks[0].clips[0].title?.style?.typography==nil)
+    let migrated=try ProjectDocument.decode(JSONEncoder().encode(legacy));#expect(migrated.version==ProjectDocument.currentVersion);#expect(migrated.sequence.tracks[0].clips[0].title?.style?.typography==nil)
     for key in [\TitleTypography.letterSpacing,\.lineSpacing] {
         for value in [Double.nan,.infinity,-.infinity,-21,513]{
             var invalid=document;invalid.sequence.tracks[0].clips[0].title?.style?.typography?[keyPath:key]=value
@@ -19,5 +19,5 @@ import Testing
         }
     }
     #expect(TitleTypography(letterSpacing:-20,lineSpacing:512).isValid)
-    #expect(throws:DocumentError.unsupportedVersion(8)){try ProjectDocument.decode(Data(#"{"version":8}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(9)){try ProjectDocument.decode(Data(#"{"version":9}"#.utf8))}
 }

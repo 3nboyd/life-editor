@@ -72,10 +72,15 @@ struct TimelineSurface: NSViewRepresentable {
     }
     private var accessibilitySignature: AccessibilitySignature?
     private(set) var accessibilityRebuildCount=0
+    private var trackTooltips:[NSView.ToolTipTag:String]=[:]
+    func trackControlRect(_ index:Int,row:Int)->NSRect {NSRect(x:visibleRect.minX+8+Double(index)*31,y:rowLayout(row).bottom-36,width:30,height:30)}
+    private func trackControlProperties(_ track:Track)->[String] {track.supportsAudio ? ["mute","hide","lock","solo"]:["mute","hide","lock"]}
+    @objc func view(_ view:NSView,stringForToolTip tag:NSView.ToolTipTag,point:NSPoint,userData:UnsafeMutableRawPointer?)->String {trackTooltips[tag] ?? ""}
     func refreshAccessibility(){
         let signature=AccessibilitySignature(document:store.timelineDocument,selection:store.selectedIDs.union(store.placementProposal?.insertedClipIDs ?? []),frame:frame,bounds:bounds,viewport:visibleRect,windowFrame:window?.frame ?? .zero,pixelsPerSecond:store.pixelsPerSecond,layoutRevision:layout.revision,automationSelection:store.selectedAutomationPointIDs,lane:store.automationLane,decisions:showsDecisionLanes,cutSelection:selectedCutID)
         guard signature != accessibilitySignature else { return }
         accessibilitySignature=signature; accessibilityRebuildCount += 1
+        removeAllToolTips();trackTooltips.removeAll()
         var elements:[NSAccessibilityElement]=[]
         if showsDecisionLanes,let group=store.multicamGroup {
             for audio in [false,true] {for cut in audio ? group.audioCuts ?? []:group.cuts {
@@ -120,14 +125,17 @@ struct TimelineSurface: NSViewRepresentable {
                     }
                 }
             }
-            for (index,label) in ["Mute","Hide","Lock"].enumerated(){
+            for (index,property) in trackControlProperties(track).enumerated(){
+                let active=property == "mute" ? track.isMuted:property == "hide" ? track.isHidden:property == "lock" ? track.isLocked:track.isSoloed
+                let label=property == "mute" ? (active ? "Unmute":"Mute"):property == "hide" ? (active ? "Show":"Hide"):property == "lock" ? (active ? "Unlock":"Lock"):(active ? "Unsolo":"Solo")
                 let element=TimelineActionElement { [weak self] in
                     guard let self,self.store.placementProposal == nil else { return false }
-                    self.store.toggleTrack(track.id,property:["mute","hide","lock"][index]);return true
+                    self.store.toggleTrack(track.id,property:property);self.needsDisplay=true;self.refreshAccessibility();return true
                 }
-                element.setAccessibilityRole(.button);element.setAccessibilityParent(self);element.setAccessibilityLabel(label+" "+track.name)
-                let frame=convert(NSRect(x:visibleRect.minX+12+Double(index)*36,y:rowLayout(row).bottom-26,width:28,height:24),to:nil)
+                element.setAccessibilityRole(.button);element.setAccessibilityParent(self);element.setAccessibilityLabel(label+" "+track.name);element.setAccessibilityValue(active ? "On":"Off")
+                let box=trackControlRect(index,row:row),frame=convert(box,to:nil)
                 element.setAccessibilityFrame(window?.convertToScreen(frame) ?? frame);elements.append(element)
+                trackTooltips[addToolTip(box,owner:self,userData:nil)]=label+" "+track.name
             }
             let height=TimelineHeightElement(increment:{[weak self] in self?.resizeTrack(track.id,by:16) ?? false},decrement:{[weak self] in self?.resizeTrack(track.id,by:-16) ?? false})
             height.setAccessibilityRole(.slider);height.setAccessibilityParent(self);height.setAccessibilityLabel("Height "+track.name);height.setAccessibilityValue(layout.height(for:track.id));height.setAccessibilityMinValue(56);height.setAccessibilityMaxValue(240)
@@ -409,10 +417,11 @@ struct TimelineSurface: NSViewRepresentable {
                 NSGraphicsContext.restoreGraphicsState()
             }
             NSColor(white:0.10,alpha:1).setFill();NSRect(x:visible.minX,y:top,width:header,height:geometry.height).fill()
-            text(track.name,NSPoint(x:visible.minX+12,y:top+11),color:.labelColor)
-            if geometry.height>=72 {text(track.isLocked ? "● Locked" : (track.kind == .audio ? "Audio" : "Video"),NSPoint(x:visible.minX+12,y:top+30),size:10)}
-            for (i,symbol) in [track.isMuted ? "speaker.slash.fill" : "speaker.wave.2",track.isHidden ? "eye.slash" : "eye",track.isLocked ? "lock.fill" : "lock.open"].enumerated() {
-                let r=NSRect(x:visible.minX+12+Double(i)*36,y:geometry.bottom-26,width:24,height:20)
+            text(track.name,NSPoint(x:visible.minX+12,y:top+4),color:.labelColor)
+            if geometry.height>=88 {text(track.isLocked ? "● Locked" : (track.kind == .audio ? "Audio" : "Video"),NSPoint(x:visible.minX+12,y:top+30),size:10)}
+            let symbols=[track.isMuted ? "speaker.slash.fill" : "speaker.wave.2",track.isHidden ? "eye.slash" : "eye",track.isLocked ? "lock.fill" : "lock.open"]+(track.supportsAudio ? [track.isSoloed ? "headphones.circle.fill":"headphones.circle"]:[])
+            for (i,symbol) in symbols.enumerated() {
+                let r=trackControlRect(i,row:row).insetBy(dx:5,dy:5)
                 NSImage(systemSymbolName:symbol,accessibilityDescription:nil)?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors:[NSColor(calibratedWhite:0.75,alpha:1)]))?.draw(in:r)
             }
         }
@@ -508,9 +517,8 @@ struct TimelineSurface: NSViewRepresentable {
         guard let row=trackRow(at:point.y) else {store.seek((point.x-header)/store.pixelsPerSecond);return}
         let track=tracks[row];layoutTrackSelection=track.id
         if point.x<visibleRect.minX+header {
-            if point.y>=rowLayout(row).bottom-28 {
-                let i=Int((point.x-visibleRect.minX-12)/36)
-                if (0...2).contains(i) {store.toggleTrack(track.id,property:["mute","hide","lock"][i])}
+            if let index=trackControlProperties(track).indices.first(where:{trackControlRect($0,row:row).contains(point)}) {
+                store.toggleTrack(track.id,property:trackControlProperties(track)[index]);needsDisplay=true;refreshAccessibility()
             }
             return
         }

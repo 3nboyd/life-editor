@@ -516,6 +516,10 @@ final class EditorStore: ObservableObject {
         if property == "lock" { next.sequence.tracks[index].isLocked.toggle() }
         if property == "hide" { next.sequence.tracks[index].isHidden.toggle() }
         if property == "mute" { next.sequence.tracks[index].isMuted.toggle() }
+        if property == "solo" {
+            guard next.sequence.tracks[index].supportsAudio else { return }
+            next.sequence.tracks[index].isSoloed.toggle()
+        }
         replace(next)
     }
     private func resetSession(){
