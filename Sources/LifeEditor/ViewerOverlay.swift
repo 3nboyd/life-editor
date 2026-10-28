@@ -47,14 +47,30 @@ struct ViewerOverlay:View {
                         TextField("Text",text:Binding(get:{store.selectedClip?.title?.text ?? ""},set:{v in store.editSelected{$0.title?.text=v}}),axis:.vertical).textFieldStyle(.roundedBorder).frame(width:min(400,box.width)).position(position).onSubmit{editingText=false}
                     }
                 }
-                if !store.samplingColor,store.drawingMode>0 {
+                if !store.samplingColor,(1...3).contains(store.drawingMode) {
                     Color.clear.contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged{value in
-                        let point=GraphicPoint(x:max(0,min(1,(value.location.x-origin.x)/canvas.width)),y:max(0,min(1,(value.location.y-origin.y)/canvas.height)))
+                        let raw:GraphicPoint
+                        if let clip=store.selectedClip,store.selectedDrawing != nil,clip.start.seconds<=store.playhead,store.playhead<clip.end.seconds {
+                            raw=DrawingPointOverlay(store:store,canvas:canvas,origin:origin).source(value.location)
+                        }else{raw = .init(x:(value.location.x-origin.x)/canvas.width,y:(value.location.y-origin.y)/canvas.height)}
+                        let point=GraphicPoint(x:max(0,min(1,raw.x)),y:max(0,min(1,raw.y)))
                         if stroke.count<10000,stroke.last.map({hypot($0.x-point.x,$0.y-point.y)>0.001}) ?? true {stroke.append(point)}
                     }.onEnded{_ in store.commitDrawing(stroke);stroke=[]})
-                    Path{path in
-                        for (index,point) in stroke.enumerated(){let p=CGPoint(x:origin.x+point.x*canvas.width,y:origin.y+point.y*canvas.height);if index==0{path.move(to:p)}else{path.addLine(to:p)}}
-                    }.stroke(Color(.sRGB,red:store.drawingColor.red,green:store.drawingColor.green,blue:store.drawingColor.blue,opacity:store.drawingMode==2 ? 0.4:store.drawingColor.alpha),style:StrokeStyle(lineWidth:store.drawingWidth*min(canvas.width,canvas.height),lineCap:.round,lineJoin:.round)).allowsHitTesting(false)
+                    let visual:VisualTransform = {
+                        if let clip=store.selectedClip,store.selectedDrawing != nil,clip.start.seconds<=store.playhead,store.playhead<clip.end.seconds{return clip.visual ?? .init()}
+                        return .init()
+                    }()
+                    let width=store.drawingWidth*(store.drawingMode==3 ? 2:1)
+                    let crop=CGRect(x:visual.cropLeft*canvas.width,y:visual.cropTop*canvas.height,width:(1-visual.cropLeft-visual.cropRight)*canvas.width,height:(1-visual.cropTop-visual.cropBottom)*canvas.height)
+                    DrawingPreviewGeometry.outline(stroke,width:width,canvas:canvas)
+                        .fill(store.drawingMode==3 ? Color.white.opacity(0.6):Color(.sRGB,red:store.drawingColor.red,green:store.drawingColor.green,blue:store.drawingColor.blue,opacity:store.drawingColor.alpha*(store.drawingMode==2 ? 0.35:1)))
+                        .clipShape(Path(crop))
+                        .transformEffect(DrawingPreviewGeometry.transform(visual,canvas:canvas,origin:origin))
+                        .allowsHitTesting(false)
+
+                }
+                if !store.samplingColor,store.drawingMode==4 {
+                    DrawingPointOverlay(store:store,canvas:canvas,origin:origin)
                 }
                 if store.samplingColor{
                     Color.clear.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded{value in

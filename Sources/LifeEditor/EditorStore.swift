@@ -73,7 +73,7 @@ final class EditorStore: ObservableObject {
         else{selectedAutomationPointIDs=[]}
     }}
     @Published var automationLane:AutomationLane = .volume{didSet{if oldValue != automationLane{selectedAutomationPoint=nil}}}
-    @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]};if oldValue != selection{cancelColorSampling();selectedAutomationPoint=nil;automationLane=selectedUsesOpacity ? .opacity:.volume}}}
+    @Published var selection: UUID? {didSet{if let selection {if !selectedIDs.contains(selection){selectedIDs=[selection]}}else{selectedIDs=[]};if oldValue != selection{cancelColorSampling();selectedAutomationPoint=nil;selectedDrawingStrokeID=nil;selectedDrawingPointIndex=0;automationLane=selectedUsesOpacity ? .opacity:.volume}}}
     @Published var playheadTime:RationalTime = .zero
     var playhead:Double {get{playheadTime.seconds}set{playheadTime=time(newValue,audio:true)}}
     @Published var playing = false
@@ -133,6 +133,8 @@ final class EditorStore: ObservableObject {
     @Published var drawingMode=0
     @Published var drawingColor=RGBAColor.white
     @Published var drawingWidth=0.006
+    @Published var selectedDrawingStrokeID:UUID?
+    @Published var selectedDrawingPointIndex=0
     let audioAnalyzer = AudioAnalyzer()
     private var analysisTask:Task<Void,Never>?
     private var tapTimes:[Date]=[]
@@ -336,31 +338,6 @@ final class EditorStore: ObservableObject {
         let clip=Clip(name:kind.rawValue,start:time(playhead),duration:RationalTime(value:3,timescale:1),graphic:.shape(shape))
         next.sequence.tracks.append(Track(name:"Shape",kind:.shape,clips:[clip]));replace(next);selection=clip.id;panel = .clip;drawingMode=0
     }
-    func commitDrawing(_ points:[GraphicPoint]){
-        guard !points.isEmpty else{return}
-        if drawingMode==3 {
-            editSelected{clip in
-                guard case .drawing(var drawing)=clip.graphic else{return}
-                let resolution=max(32,min(512,Int(1/max(0.002,drawingWidth))))
-                let cells=Set(points.map{Int(($0.x*Double(resolution)).rounded())+(resolution+1)*Int(($0.y*Double(resolution)).rounded())})
-                drawing.strokes.removeAll{stroke in stroke.points.contains{p in
-                    let x=Int((p.x*Double(resolution)).rounded()),y=Int((p.y*Double(resolution)).rounded())
-                    for dy in -1...1 {for dx in -1...1 where cells.contains(x+dx+(resolution+1)*(y+dy)){return true}}
-                    return false
-                }}
-                clip.graphic = .drawing(drawing)
-            }
-        }else{
-            let stroke=DrawingStroke(points:Array(points.prefix(10000)),color:drawingColor,width:drawingWidth,tool:drawingMode==2 ? .highlighter:.pen)
-            if let clip=selectedClip,case .drawing=clip.graphic,clip.start.seconds<=playhead,playhead<clip.end.seconds {
-                editSelected{clip in guard case .drawing(var drawing)=clip.graphic else{return};drawing.strokes.append(stroke);clip.graphic = .drawing(drawing)}
-            }else{
-                var next=document
-                let clip=Clip(name:"Drawing",start:time(playhead),duration:RationalTime(value:3,timescale:1),graphic:.drawing(DrawingContent(strokes:[stroke])))
-                next.sequence.tracks.append(Track(name:"Drawing",kind:.drawing,clips:[clip]));replace(next);selection=clip.id
-            }
-        }
-    }
     var selectedUsesOpacity:Bool {
         if selectedIsAdjustment{return true}
         guard let clip=selectedClip else{return false}
@@ -524,6 +501,7 @@ final class EditorStore: ObservableObject {
         replace(next)
     }
     private func resetSession(){
+        selectedDrawingStrokeID=nil;selectedDrawingPointIndex=0
         placementProposal=nil;placementBaseline=nil;autosaveError=nil;cancelColorSampling();videoOutput=nil;cameraAudioTask?.cancel();cameraAudioSignature="";cameraAudioIDs=[];checkingCameraAudio=false
         cancelAudioMeasurement();audioMeasurement=nil;audioMeters=[];playbackMeterClipped=false;invalidatePlaybackMeter();stopPlayback();switchArmed=false;auditionAngle=nil;cameraPlayers.values.forEach{$0.pause()};cameraPlayers.removeAll();angleProxyTasks.values.forEach{$0.cancel()};angleProxyTasks.removeAll();cameraPage=0;analysisTask?.cancel();syncTask?.cancel();syncGeneration+=1;syncBaseline=nil;syncReferenceID=nil;syncCandidates=[];syncPreviewing=false;previewDocument=nil;importTask?.cancel();cancelTranscription();analysisConfidence=nil;recoveryTask?.cancel()
     }
