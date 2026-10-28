@@ -73,7 +73,8 @@ public struct TitleStyle: Codable, Equatable, Sendable {
     public var fontName: String?; public var x: Double; public var y: Double
     public var color: RGBAColor; public var background: RGBAColor
     public var backgroundStyle:TitleBackgroundStyle?
+    public var typography:TitleTypography?
     public var cornerRadius: Double; public var outlineWidth: Double; public var outlineColor: RGBAColor
-    public init(fontName: String? = nil, x: Double = 0.5, y: Double = 0.82, color: RGBAColor = .white, background: RGBAColor = .clear, cornerRadius: Double = 0, outlineWidth: Double = 0, outlineColor: RGBAColor = .black, backgroundStyle:TitleBackgroundStyle? = nil) {self.backgroundStyle=backgroundStyle; self.fontName=fontName; self.x=x; self.y=y; self.color=color; self.background=background; self.cornerRadius=cornerRadius; self.outlineWidth=outlineWidth; self.outlineColor=outlineColor }
-    var isValid: Bool { [x,y,cornerRadius,outlineWidth].allSatisfy(\.isFinite) && (0...1).contains(x) && (0...1).contains(y) && (0...1).contains(cornerRadius) && (0...100).contains(outlineWidth) && color.isValid && background.isValid && outlineColor.isValid && (backgroundStyle?.isValid ?? true) }
+    public init(fontName: String? = nil, x: Double = 0.5, y: Double = 0.82, color: RGBAColor = .white, background: RGBAColor = .clear, cornerRadius: Double = 0, outlineWidth: Double = 0, outlineColor: RGBAColor = .black, backgroundStyle:TitleBackgroundStyle? = nil, typography:TitleTypography? = nil) {self.typography=typography; self.backgroundStyle=backgroundStyle; self.fontName=fontName; self.x=x; self.y=y; self.color=color; self.background=background; self.cornerRadius=cornerRadius; self.outlineWidth=outlineWidth; self.outlineColor=outlineColor }
+    var isValid: Bool { [x,y,cornerRadius,outlineWidth].allSatisfy(\.isFinite) && (0...1).contains(x) && (0...1).contains(y) && (0...1).contains(cornerRadius) && (0...100).contains(outlineWidth) && color.isValid && background.isValid && outlineColor.isValid && (backgroundStyle?.isValid ?? true) && (typography?.isValid ?? true) }
 }

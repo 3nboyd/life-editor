@@ -72,16 +72,27 @@ enum TitleRenderer {
         let style = title.style ?? TitleStyle()
         func color(_ value: RGBAColor) -> CGColor { CGColor(red: value.red, green: value.green, blue: value.blue, alpha: value.alpha) }
         let font = CTFontCreateWithName((style.fontName ?? "Helvetica-Bold") as CFString, title.fontSize, nil)
-        var alignment = CTTextAlignment.center
-        let paragraph = withUnsafePointer(to: &alignment) {
-            var setting = CTParagraphStyleSetting(spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: $0)
-            return CTParagraphStyleCreate(&setting, 1)
+        let layout = style.typography
+        var alignment:CTTextAlignment
+        switch layout?.alignment ?? .center {
+        case .left:alignment = .left
+        case .center:alignment = .center
+        case .right:alignment = .right
+        }
+        var lineSpacing=CGFloat(layout?.lineSpacing ?? 0)
+        let paragraph = withUnsafePointer(to: &alignment) { alignmentPointer in
+            withUnsafePointer(to:&lineSpacing) { spacingPointer in
+                var settings=[CTParagraphStyleSetting(spec:.alignment,valueSize:MemoryLayout<CTTextAlignment>.size,value:alignmentPointer)]
+                if layout != nil {settings.append(CTParagraphStyleSetting(spec:.lineSpacingAdjustment,valueSize:MemoryLayout<CGFloat>.size,value:spacingPointer))}
+                return CTParagraphStyleCreate(settings,settings.count)
+            }
         }
         var attributes: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): color(style.color),
             NSAttributedString.Key(kCTParagraphStyleAttributeName as String): paragraph
         ]
+        if let layout {attributes[NSAttributedString.Key(kCTKernAttributeName as String)] = layout.letterSpacing}
         if style.outlineWidth > 0 {
             attributes[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -style.outlineWidth * 100 / title.fontSize
             attributes[NSAttributedString.Key(kCTStrokeColorAttributeName as String)] = color(style.outlineColor)

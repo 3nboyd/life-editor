@@ -32,8 +32,8 @@ import Testing
     var legacy=ProjectDocument(sequence:.init(tracks:[.init(name:"Legacy",kind:.title,clips:[legacyClip])]))
     for version in 1...5 {
         legacy.version=version;let bytes=try JSONEncoder().encode(legacy),migrated=try ProjectDocument.decode(bytes)
-        var expected=legacy;expected.version=6;#expect(migrated==expected)
+        var expected=legacy;expected.version=7;#expect(migrated==expected)
         #expect(migrated.sequence.tracks[0].clips[0].title?.style?.backgroundStyle==nil)
     }
-    #expect(throws:DocumentError.unsupportedVersion(7)){try ProjectDocument.decode(Data(#"{"version":7,"opaque":true}"#.utf8))}
+    #expect(throws:DocumentError.unsupportedVersion(8)){try ProjectDocument.decode(Data(#"{"version":8,"opaque":true}"#.utf8))}
 }
