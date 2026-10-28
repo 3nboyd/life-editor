@@ -1,6 +1,7 @@
 import Testing
 import AppKit
 import SwiftUI
+import AVKit
 import LifeCore
 @testable import LifeEditor
 
@@ -181,4 +182,49 @@ import LifeCore
     try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
     try #require(bitmap.representation(using:.png,properties:[:])).write(to:directory.appendingPathComponent("placement-1280x800.png"))
     store.cancelPlacement()
+}
+
+@MainActor @Test func multicamPreviewsSitBesideUnobscuredOutputAtPracticalWindowSize() throws {
+    _ = NSApplication.shared
+    let store=EditorStore(),duration=RationalTime(value:4,timescale:1)
+    let assets=(1...4).map{MediaAsset(url:URL(fileURLWithPath:"/tmp/life-layout-camera-\($0).mov"),kind:.video,duration:duration)}
+    let group=MulticamGroup(angleAssetIDs:assets.map(\.id),masterAudioAssetID:assets[0].id,cuts:[.init(time:.zero,angleID:assets[0].id)])
+    store.document=ProjectDocument(sequence:Sequence(tracks:assets.map{Track(name:$0.url.lastPathComponent,kind:.video,clips:[Clip(assetID:$0.id,duration:duration)])},multicamGroups:[group]),assets:assets)
+    store.panel = .multicam
+    let host=NSHostingView(rootView:WorkspaceView(store:store).preferredColorScheme(.dark))
+    host.frame=NSRect(x:0,y:0,width:1280,height:800);host.layoutSubtreeIfNeeded()
+    #expect(host.fittingSize.width<=1280);#expect(host.fittingSize.height<=800)
+    let players=workspacePlayers(in:host)
+    let output=try #require(players.first{$0.player === store.player})
+    let outputRect=output.convert(output.bounds,to:host)
+    let angles=players.filter{$0 !== output}
+    #expect(angles.count==4)
+    for angle in angles {
+        let rect=angle.convert(angle.bounds,to:host)
+        #expect(rect.width>0 && rect.height>0)
+        #expect(rect.minX>=outputRect.maxX)
+        #expect(!rect.intersects(outputRect))
+    }
+    #expect(outputRect.width>400)
+}
+
+@MainActor @Test func rememberedTimelineCollapseExpandsViewerWithoutHidingTransport() throws {
+    _ = NSApplication.shared
+    let defaults=UserDefaults.standard,key="timelineCollapsed",previous=defaults.object(forKey:"timelineCollapsed")
+    defer{if let previous{defaults.set(previous,forKey:key)}else{defaults.removeObject(forKey:key)}}
+    func outputHeight(collapsed:Bool)throws->Double {
+        defaults.set(collapsed,forKey:key)
+        let store=EditorStore()
+        let host=NSHostingView(rootView:WorkspaceView(store:store).preferredColorScheme(.dark))
+        host.frame=NSRect(x:0,y:0,width:1280,height:800);host.layoutSubtreeIfNeeded()
+        #expect(host.fittingSize.width<=1280);#expect(host.fittingSize.height<=800)
+        let player=try #require(workspacePlayers(in:host).first{$0.player === store.player})
+        return player.bounds.height
+    }
+    let expandedHeight=try outputHeight(collapsed:false),collapsedHeight=try outputHeight(collapsed:true)
+    #expect(collapsedHeight>expandedHeight+150)
+}
+
+@MainActor private func workspacePlayers(in view:NSView)->[AVPlayerView] {
+    (view as? AVPlayerView).map{[$0]} ?? view.subviews.flatMap{workspacePlayers(in:$0)}
 }

@@ -14,7 +14,7 @@ struct WorkspaceView: View {
     @AppStorage("inspectorWidth") private var inspectorWidth=260.0
     @State private var resizingTimeline:Double?
     @State private var resizingPanel:Double?
-    @State private var timelineCollapsed=false
+    @AppStorage("timelineCollapsed") private var timelineCollapsed=false
     @State private var shapePicker=false
     @State private var audioPage=0
     var body: some View {
@@ -30,7 +30,7 @@ struct WorkspaceView: View {
                                 Rectangle().fill(.white.opacity(0.08)).frame(width:5).contentShape(Rectangle()).gesture(DragGesture().onChanged{value in
                                     if resizingPanel==nil{resizingPanel=inspectorWidth}
                                     inspectorWidth=max(220,min(380,(resizingPanel ?? 260)-value.translation.width))
-                                }.onEnded{_ in resizingPanel=nil}).help("Resize panel").accessibilityLabel("Resize panel")
+                                }.onEnded{_ in resizingPanel=nil}).help("Resize panel").accessibilityLabel("Resize panel").accessibilityAdjustableAction{direction in inspectorWidth=max(220,min(380,inspectorWidth+(direction == .increment ? 20:-20)))}
                                 inspector.frame(width:inspectorWidth)
                             }
                         }.frame(height:timelineCollapsed ? geometry.size.height : geometry.size.height*(1-timelineFraction)-2)
@@ -67,6 +67,7 @@ struct WorkspaceView: View {
             icon("bookmark", "Markers",selected:store.panel == .markers){toggle(.markers)}
             icon("waveform", "Audio", selected:store.panel == .audio) {toggle(.audio)}
             icon("square.grid.2x2", "Multicam", selected:store.panel == .multicam) {toggle(.multicam)}
+            icon("rectangle.bottomthird.inset.filled", timelineCollapsed ? "Show timeline":"Hide timeline", selected:!timelineCollapsed) { timelineCollapsed.toggle() }
             Spacer()
             Text(store.document.name + (store.dirty ? " •" : "")).font(.system(size:12,weight:.medium)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
@@ -85,19 +86,21 @@ struct WorkspaceView: View {
     }
     private var viewer: some View {
         VStack(spacing:0) {
-            ZStack {
-                Color.black
-                PlayerSurface(player:store.player)
-                ViewerOverlay(store:store)
+            HStack(spacing:8) {
+                ZStack {
+                    Color.black
+                    PlayerSurface(player:store.player)
+                    ViewerOverlay(store:store)
+                    if store.document.sequence.tracks.isEmpty {
+                        Button(action:store.importMedia) { Image(systemName:"plus.rectangle.on.rectangle").font(.system(size:30,weight:.ultraLight)).frame(width:80,height:80) }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Import · ⌘I").accessibilityLabel("Import media")
+                    }
+                    if store.safeAreas {
+                        Rectangle().stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:1,dash:[5,5])).padding(32).allowsHitTesting(false)
+                    }
+                }
                 if store.panel == .multicam && store.multicamGroup != nil {
-                    HStack {Spacer();angleGrid.frame(width:200).padding(8)}
-                }
-                if store.document.sequence.tracks.isEmpty {
-                    Button(action:store.importMedia) { Image(systemName:"plus.rectangle.on.rectangle").font(.system(size:30,weight:.ultraLight)).frame(width:80,height:80) }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Import · ⌘I").accessibilityLabel("Import media")
-                }
-                if store.safeAreas {
-                    Rectangle().stroke(.white.opacity(0.35),style:StrokeStyle(lineWidth:1,dash:[5,5])).padding(32).allowsHitTesting(false)
+                    angleGrid.frame(width:200)
                 }
             }.padding(12)
             HStack(spacing:14) {
@@ -174,9 +177,12 @@ struct WorkspaceView: View {
                     TitleControls(store:store)
                     HStack { Text("Size"); Slider(value:Binding(get:{store.selectedClip?.title?.fontSize ?? 64},set:{v in store.editSelected{$0.title?.fontSize=v}}),in:16...160,onEditingChanged:gesture) }
                 } else if clip.assetID != nil,clip.freezeFrame == nil {
-                    HStack { Text("Speed"); Spacer(); Text(String(format:"%.2f×",clip.speed)).monospacedDigit() }
-                    Slider(value:Binding(get:{store.selectedClip?.speed ?? 1},set:{ v in store.setSpeed(v) }),in:0.25...4,step:0.05,onEditingChanged:gesture)
-                    Toggle("Preserve pitch",isOn:Binding(get:{store.selectedClip?.preservesPitch ?? true},set:{v in store.editSelected{$0.preservesPitch=v}}))
+                    HStack {
+                        Text("Speed"); Spacer(); Text(String(format:"%.2f×",clip.speed)).monospacedDigit()
+                        icon(clip.preservesPitch ? "lock.fill":"lock.open", "Pitch lock", selected:clip.preservesPitch) { store.editSelected{$0.preservesPitch.toggle()} }
+                            .accessibilityValue(clip.preservesPitch ? "On, preserve pitch":"Off, varispeed")
+                    }
+                    Slider(value:Binding(get:{store.selectedClip?.speed ?? 1},set:{ v in store.setSpeed(v) }),in:0.25...4,step:0.05,onEditingChanged:gesture).accessibilityLabel("Clip speed")
                 }
                 AutomationControls(store:store)
                 HStack {
@@ -241,8 +247,9 @@ struct WorkspaceView: View {
                 ForEach(Array(store.visibleAngles.prefix(4).enumerated()),id:\.element.id){index,asset in
                     Button{store.chooseAngle(asset.id)}label:{
                         ZStack(alignment:.bottomLeading){PlayerSurface(player:store.anglePlayer(asset)).frame(height:70).allowsHitTesting(false);Text("\(index+1)").font(.caption.bold()).padding(4).background(.black.opacity(0.8))}
+                            .overlay(alignment:.topTrailing){if store.auditionAngle==asset.id{Image(systemName:"checkmark.circle.fill").padding(4).background(.black.opacity(0.8),in:Circle()).padding(3)}}
                             .overlay{if store.auditionAngle==asset.id{Rectangle().stroke(accent,lineWidth:2)}}
-                    }.buttonStyle(.plain).disabled(!store.angleAvailable(asset)).opacity(store.angleAvailable(asset) ? 1:0.3).help("Camera \(index+1)").accessibilityLabel("Camera \(index+1): \(asset.url.lastPathComponent)")
+                    }.buttonStyle(.plain).disabled(!store.angleAvailable(asset)).opacity(store.angleAvailable(asset) ? 1:0.3).help("Camera \(index+1)").accessibilityLabel("Camera \(index+1): \(asset.url.lastPathComponent)").accessibilityValue(!store.angleAvailable(asset) ? "Unavailable":store.auditionAngle==asset.id ? "Selected":"Available")
                 }
             }
         }.frame(maxHeight:310).background(.black.opacity(0.7),in:RoundedRectangle(cornerRadius:6))
