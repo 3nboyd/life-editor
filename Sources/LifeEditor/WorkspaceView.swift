@@ -16,6 +16,7 @@ struct WorkspaceView: View {
     @State private var resizingPanel:Double?
     @AppStorage("timelineCollapsed") private var timelineCollapsed=false
     @State private var shapePicker=false
+    @State private var stickerPicker=false
     @State private var audioPage=0
     var body: some View {
         VStack(spacing:0) {
@@ -58,6 +59,9 @@ struct WorkspaceView: View {
             Divider().frame(height:18)
             icon("rectangle.stack", "Media", selected:store.panel == .media) { toggle(.media) }
             icon("textformat", "Title", action:store.addTitle)
+            icon("face.smiling", "Stickers"){stickerPicker.toggle()}
+                .popover(isPresented:$stickerPicker){StickerPicker(store:store){stickerPicker=false}}
+                .disabled(store.placementProposal != nil)
             icon("shapes", "Shapes"){shapePicker.toggle()}.popover(isPresented:$shapePicker){HStack(spacing:12){
                 ForEach(ShapeKind.allCases,id:\.self){kind in Button{store.addShape(kind);shapePicker=false}label:{Image(systemName:shapeIcon(kind)).frame(width:32,height:32)}.buttonStyle(.plain).help(kind.rawValue).accessibilityLabel(kind.rawValue)}
             }.padding(14)}
