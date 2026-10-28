@@ -73,6 +73,8 @@ remain on the roadmap.
 [Current progress](docs/PROGRESS.md) separates working features from remaining
 work. [Verification](docs/VERIFICATION.md) records actual test results and their
 limits. [Phase 3](docs/PHASE3.md) lays out the creator-toolkit delivery plan.
+The [first public preview](docs/PUBLIC-PREVIEW.md) targets November 1, with
+release checks and signing status tracked separately from the full 1.0 roadmap.
 
 To build, test or contribute, start with [Contributing](CONTRIBUTING.md).
 Original project code is MIT licensed; dependencies have
