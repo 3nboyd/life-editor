@@ -12,6 +12,13 @@ videos. A large viewer, layered timeline and direct editing keep the work in vie
 
 [Build and try it](#build-and-try-it) · [What's working](#whats-working) · [Progress](docs/PROGRESS.md) · [Roadmap](docs/ROADMAP.md) · [Contribute](CONTRIBUTING.md)
 
+## Rendered project examples
+
+<img src="docs/images/performance.png" width="640" alt="Rendered 16:9 music project with a warm look and styled title"> <img src="docs/images/social.png" width="202" alt="Rendered 9:16 social project with a title and pill caption">
+
+Frames from Life Editor exports: a performance title and a portrait caption edit.
+[Open and reproduce these examples](docs/gallery/README.md).
+
 ## What's working
 
 | Edit | Make it yours | Work with music |
