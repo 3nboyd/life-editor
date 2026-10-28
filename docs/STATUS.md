@@ -78,7 +78,7 @@ Freeze does not yet support speed/slip/roll or multicam source extensions.
 
 Source-aware crop ratios, Fit/Fill and undoable straightening now use the same
 persisted transform in preview and export, including oriented still images. Schema 1
-through 6 projects migrate to schema 7; unknown future project/recovery data is protected.
+through 7 projects migrate to schema 8; unknown future project/recovery data is protected.
 Schema boundaries prevent older readers from silently omitting adjustment-layer or
 new tonal-control, explicit camcorder-date or text-background rendering.
 
@@ -168,10 +168,14 @@ position, preserving words, appearance, timing and animation.
 The complete creator toolkit remains in the [Phase 3 plan](PHASE3.md) and
 [requirement register](ROADMAP.md).
 
-Local full native/helper verification: 249 tests across 12 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
+Local full native/helper verification: 255 tests across 14 suites pass (2026-10-27). Optimized ad-hoc app build passes. These measurements are from the local
 M4 and do not establish the M1 performance targets.
 
 The October 27 [requirements audit](AUDIT-2026-10-27.md) records UI and safety
 fixes. Timeline collapse is now remembered, multicam previews sit beside the output,
 and malformed clip clipboard data is rejected atomically. The
 [first public preview](PUBLIC-PREVIEW.md) targets November 1, separately from 1.0.
+
+Audio and video tracks now expose additive audio solo in both the inspector and
+timeline header, including empty tracks. Mute overrides solo; hidden video keeps
+its audio. Solo does not hide pictures. State persists in schema 8 and is undoable.

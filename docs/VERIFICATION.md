@@ -3,7 +3,40 @@
 Host: macOS 15.6, Apple M4, 16 GB; Swift 6.2.3 CLT compiler/SDK.
 This is not an M1 benchmark. No usability or performance target is claimed met.
 
-## Latest run: requirements audit and preview tooling, 2026-10-27
+## Latest run: track solo and personal-project workflow, 2026-10-27
+
+Full native/helper verification passes: **255 tests across 14 suites in
+20.162 seconds** on the local M4. A final strengthened personal-project check
+passes separately (0.994 seconds). The optimized ad-hoc app build and bundled
+LGPL helper verification pass. Solo and associated native hold-boundary checks
+pass in a focused seven-test run. These do not establish M1 or usability targets.
+
+Solo checks cover additive audio/video tracks, mute taking precedence, independent
+picture visibility, hidden-track audio, schema 8 protection/legacy default-off,
+package round-trip and exact undo. A native PCM export measures the expected
+summed amplitude. An empty soloed track remains operable through real timeline
+pointer and accessibility actions after its final clip is removed.
+
+The connected personal-project fixture probes a photograph and WAV, trims both,
+adds a lower-third title, edits audio/opacity fades, undoes/redoes a trim, exports,
+collects a portable package, removes only its disposable import copies, reopens
+and exports again. It checks black gap pixels, visible photo pixels, actual title
+pixel changes, reopened/export frame agreement and decoded audio fade-in/fade-out.
+The repository's generated fictional photo supplies redistributable fixture media.
+
+This fixture exposed a real shared native fade regression: a clip beginning after
+a leading gap could retain unity gain through its initial ramp. Seeding the
+initial input gain at composition zero fixes both prepared playback and decoded
+export. Live/export fade peaks now agree within 0.5 dB (approximately −26.4 dBFS
+versus −14 dBFS in the middle). The diagnostic unbounded meter scan was reverted;
+production meters still read bounded windows. Independent review checked the
+routing, schema boundary, empty-track recovery and initial-gain fix.
+
+This is deterministic integration evidence, not a completed musician/student
+usability session or manual standalone-app smoke pass. Those public-preview gates
+remain open in [the release plan](PUBLIC-PREVIEW.md).
+
+## Previous run: requirements audit and preview tooling, 2026-10-27
 
 Full local native/helper verification passes: **249 tests across 12 suites in
 18.331 seconds** on the M4. Focused workspace/clipboard checks pass (13 tests,

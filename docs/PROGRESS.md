@@ -46,7 +46,7 @@ Next Phase 2 priorities: explicit audio looping with adjustable crossfades, reve
 and speed ramps, remaining musical-grid controls/metronome, and broader workflow
 and performance coverage. Earlier incomplete requirements remain in the register.
 
-Latest local verification: 249 tests across 12 suites in the full native/helper
+Latest local verification: 255 tests across 14 suites in the full native/helper
 run and the optimized ad-hoc app build pass. Hosted CI is checked separately after
 publishing. See [verification](VERIFICATION.md) for dates and practical limits.
 
@@ -54,3 +54,9 @@ The October 27 [requirements audit](AUDIT-2026-10-27.md) records UI and safety
 fixes. Timeline collapse is now remembered, multicam previews sit beside the output,
 and malformed clip clipboard data is rejected atomically. The
 [first public preview](PUBLIC-PREVIEW.md) targets November 1, separately from 1.0.
+
+Latest chunk adds additive audio track solo with accessible empty-track controls,
+schema 8 persistence and shared routing. A connected personal-project fixture
+verifies trim/title/fades/collection/reopen/export and caught a now-fixed leading-gap
+fade regression. Overall planning estimate remains about 60%; broad phase gates
+are not closed by this fixture.
