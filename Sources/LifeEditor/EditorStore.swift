@@ -79,7 +79,7 @@ final class EditorStore: ObservableObject {
     @Published var playing = false
     @Published var busy = false
     @Published var importProgress:Double=0
-    private var importTask:Task<Void,Never>?
+    var importTask:Task<Void,Never>?
     @Published var exporting = false
     @Published var showExport=false
     @Published var exportProgress:Double=0
@@ -146,14 +146,14 @@ final class EditorStore: ObservableObject {
     private var rangeOriginalGroup:MulticamGroup?
     private var recordingPass = false
     let player = AVPlayer()
-    private let media = MediaPipeline()
+    let media = MediaPipeline()
     private var editor = ProjectEditor()
     private var projectURL: URL?
     private var refreshTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
     private var observer: Any?
     private var generation = 0
-    private var projectGeneration = 0
+    var projectGeneration = 0
     enum InspectorPanel: String, CaseIterable { case media, title, clip, audio, multicam, effects, drawing, markers }
     init() {
         player.automaticallyWaitsToMinimizeStalling=false
